@@ -12,7 +12,7 @@ import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.SettingsKey
-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
+import org.futo.inputmethod.latin.uix.OFFLINE_MODE
 import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryAction
 import org.futo.inputmethod.latin.uix.actions.fonttyper.FontTyperAction
 import org.futo.inputmethod.latin.uix.getSetting
@@ -70,11 +70,11 @@ private fun List<Action>.verifyNamesAreUnique(): List<Action> {
 object ActionRegistry {
     suspend fun getActionOverride(context: Context, action: Action): Action {
         return if(action == VoiceInputAction || action == SystemVoiceInputAction) {
-            val useSystemVoiceInput = context.getSetting(USE_SYSTEM_VOICE_INPUT)
-            if(useSystemVoiceInput) {
-                SystemVoiceInputAction
-            } else {
+            val offlineMode = context.getSetting(OFFLINE_MODE)
+            if(offlineMode) {
                 VoiceInputAction
+            } else {
+                GroqVoiceInputAction
             }
         } else {
             action

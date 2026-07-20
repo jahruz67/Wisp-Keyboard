@@ -2,7 +2,33 @@ package org.futo.inputmethod.latin.uix
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+
+val OFFLINE_MODE = SettingsKey(
+    key = booleanPreferencesKey("voice_input_offline_mode"),
+    default = false
+)
+
+val GROQ_API_KEY = SettingsKey(
+    key = stringPreferencesKey("groq_api_key"),
+    default = ""
+)
+
+val GROQ_WHISPER_MODEL = SettingsKey(
+    key = stringPreferencesKey("groq_whisper_model"),
+    default = "whisper-large-v3"
+)
+
+val GROQ_WHISPER_LANGUAGE = SettingsKey(
+    key = stringPreferencesKey("groq_whisper_language"),
+    default = "en"
+)
+
+val GROQ_AI_MODEL = SettingsKey(
+    key = stringPreferencesKey("groq_ai_model"),
+    default = "openai/gpt-oss-120b"
+)
 
 val ENABLE_SOUND = SettingsKey(
     key = booleanPreferencesKey("enable_sounds"),

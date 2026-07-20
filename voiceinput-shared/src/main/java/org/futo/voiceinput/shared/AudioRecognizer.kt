@@ -16,6 +16,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.konovalov.vad.Vad
 import com.konovalov.vad.config.FrameSize
@@ -92,6 +93,37 @@ data class AudioRecognizerSettings(
 
 class ModelDoesNotExistException(val models: List<ModelLoader>) : Throwable()
 
+/**
+ * Check if media is currently playing. If so, pause it and return true.
+ * The caller should store this result to know whether to resume later.
+ */
+fun pauseMediaIfPlaying(context: Context): Boolean {
+    try {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (audioManager.isMusicActive) {
+            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+            return true
+        }
+    } catch(e: Exception) {
+        Log.e("AudioRecognizer", "Failed to pause media", e)
+    }
+    return false
+}
+
+/**
+ * Resume media playback. Only call this if [pauseMediaIfPlaying] returned true.
+ */
+fun resumeMedia(context: Context) {
+    try {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+    } catch(e: Exception) {
+        Log.e("AudioRecognizer", "Failed to resume media", e)
+    }
+}
+
 class AudioRecognizer(
     private val context: Context,
     private val lifecycleScope: LifecycleCoroutineScope,
@@ -115,6 +147,7 @@ class AudioRecognizer(
     private var focusRequest: AudioFocusRequest? = null
 
     private var communicationDevice = "unknown"
+    private var wasMediaPlaying = false
 
     private fun focusAudio() {
         unfocusAudio()
@@ -230,6 +263,12 @@ class AudioRecognizer(
         unfocusAudio()
 
         clearCommunicationDevice()
+
+        // Only resume media if we were the ones who paused it
+        if (wasMediaPlaying) {
+            resumeMedia(context)
+            wasMediaPlaying = false
+        }
     }
 
     fun finish() {
@@ -508,6 +547,9 @@ class AudioRecognizer(
         }
 
         focusAudio()
+
+        // Pause media only if it's actively playing — track whether we paused it
+        wasMediaPlaying = pauseMediaIfPlaying(context)
 
         listener.recordingStarted(device)
 

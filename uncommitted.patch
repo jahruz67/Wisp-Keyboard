@@ -1,0 +1,1253 @@
+diff --git a/build.gradle b/build.gradle
+index 803081d5f..c2661d6f3 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -420,6 +420,7 @@ dependencies {
+     implementation 'com.google.code.findbugs:jsr305:3.0.2'
+ 
+     implementation 'androidx.datastore:datastore-preferences:1.1.7'
++    implementation 'androidx.security:security-crypto:1.0.0'
+     implementation 'androidx.autofill:autofill:1.1.0'
+     implementation 'androidx.window:window:1.3.0'
+ 
+diff --git a/java/AndroidManifest.xml b/java/AndroidManifest.xml
+index f6fc23d29..d6e4baf82 100644
+--- a/java/AndroidManifest.xml
++++ b/java/AndroidManifest.xml
+@@ -33,7 +33,8 @@
+     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"
+         android:minSdkVersion="33" />
+ 
+-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
++    <uses-permission android:name="android.permission.INTERNET"/>
++    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+ 
+     <application android:label="@string/english_ime_name"
+          android:icon="@mipmap/ic_launcher"
+diff --git a/java/res/values/strings-uix.xml b/java/res/values/strings-uix.xml
+index eaff24078..d22331ba9 100644
+--- a/java/res/values/strings-uix.xml
++++ b/java/res/values/strings-uix.xml
+@@ -565,9 +565,15 @@
+ 
+     <!-- Voice input settings menu -->
+     <string name="voice_input_settings_title">Voice Input</string>
+-    <string name="voice_input_settings_builtin_disabled_notice">Built-in voice input is disabled!</string>
+-    <string name="voice_input_settings_disable_builtin_voice_input">Disable built-in voice input</string>
+-    <string name="voice_input_settings_disable_builtin_voice_input_subtitle">Use voice input provided by external app</string>
++    <string name="voice_input_settings_offline_mode">Offline Mode</string>
++    <string name="voice_input_settings_offline_mode_subtitle">Use local voice input models instead of Groq cloud API</string>
++    <string name="voice_input_settings_offline_notice">Offline Mode — using local models</string>
++    <string name="voice_input_settings_groq_api_key">Groq API Key</string>
++    <string name="voice_input_settings_groq_api_key_subtitle">Enter your Groq API key for cloud transcription</string>
++    <string name="voice_input_settings_whisper_model">Whisper Model</string>
++    <string name="voice_input_settings_whisper_language">Whisper Language</string>
++    <string name="voice_input_settings_ai_model">AI Enhancement Model</string>
++    <string name="voice_input_settings_ai_model_subtitle">Used for grammar and spelling correction of the transcription</string>
+     <string name="voice_input_settings_indication_sounds">Indication sounds</string>
+     <string name="voice_input_settings_indication_sounds_subtitle">Play a short sound on start and cancel</string>
+     <string name="voice_input_settings_verbose_progress">Verbose progress</string>
+diff --git a/java/src/org/futo/inputmethod/latin/uix/Settings.kt b/java/src/org/futo/inputmethod/latin/uix/Settings.kt
+index a77564404..8502005b6 100644
+--- a/java/src/org/futo/inputmethod/latin/uix/Settings.kt
++++ b/java/src/org/futo/inputmethod/latin/uix/Settings.kt
+@@ -369,11 +369,6 @@ val THEME_KEY = SettingsKey(
+     default = ""
+ )
+ 
+-val USE_SYSTEM_VOICE_INPUT = SettingsKey(
+-    key = booleanPreferencesKey("useSystemVoiceInput"),
+-    default = false
+-)
+-
+ val USE_TRANSFORMER_FINETUNING = SettingsKey(
+     key = booleanPreferencesKey("useTransformerFinetuning2"),
+     default = false
+diff --git a/java/src/org/futo/inputmethod/latin/uix/VoiceInputSettingKeys.kt b/java/src/org/futo/inputmethod/latin/uix/VoiceInputSettingKeys.kt
+index ef230eecb..43191f338 100644
+--- a/java/src/org/futo/inputmethod/latin/uix/VoiceInputSettingKeys.kt
++++ b/java/src/org/futo/inputmethod/latin/uix/VoiceInputSettingKeys.kt
+@@ -2,8 +2,34 @@ package org.futo.inputmethod.latin.uix
+ 
+ import androidx.datastore.preferences.core.booleanPreferencesKey
+ import androidx.datastore.preferences.core.intPreferencesKey
++import androidx.datastore.preferences.core.stringPreferencesKey
+ import androidx.datastore.preferences.core.stringSetPreferencesKey
+ 
++val OFFLINE_MODE = SettingsKey(
++    key = booleanPreferencesKey("voice_input_offline_mode"),
++    default = false
++)
++
++val GROQ_API_KEY = SettingsKey(
++    key = stringPreferencesKey("groq_api_key"),
++    default = ""
++)
++
++val GROQ_WHISPER_MODEL = SettingsKey(
++    key = stringPreferencesKey("groq_whisper_model"),
++    default = "whisper-large-v3"
++)
++
++val GROQ_WHISPER_LANGUAGE = SettingsKey(
++    key = stringPreferencesKey("groq_whisper_language"),
++    default = "en"
++)
++
++val GROQ_AI_MODEL = SettingsKey(
++    key = stringPreferencesKey("groq_ai_model"),
++    default = "openai/gpt-oss-120b"
++)
++
+ val ENABLE_SOUND = SettingsKey(
+     key = booleanPreferencesKey("enable_sounds"),
+     default = true
+diff --git a/java/src/org/futo/inputmethod/latin/uix/actions/Registry.kt b/java/src/org/futo/inputmethod/latin/uix/actions/Registry.kt
+index 8130eae06..abfe36b19 100644
+--- a/java/src/org/futo/inputmethod/latin/uix/actions/Registry.kt
++++ b/java/src/org/futo/inputmethod/latin/uix/actions/Registry.kt
+@@ -12,7 +12,7 @@ import org.futo.inputmethod.latin.settings.Settings
+ import org.futo.inputmethod.latin.uix.Action
+ import org.futo.inputmethod.latin.uix.PreferenceUtils
+ import org.futo.inputmethod.latin.uix.SettingsKey
+-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
++import org.futo.inputmethod.latin.uix.OFFLINE_MODE
+ import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryAction
+ import org.futo.inputmethod.latin.uix.actions.fonttyper.FontTyperAction
+ import org.futo.inputmethod.latin.uix.getSetting
+@@ -70,11 +70,11 @@ private fun List<Action>.verifyNamesAreUnique(): List<Action> {
+ object ActionRegistry {
+     suspend fun getActionOverride(context: Context, action: Action): Action {
+         return if(action == VoiceInputAction || action == SystemVoiceInputAction) {
+-            val useSystemVoiceInput = context.getSetting(USE_SYSTEM_VOICE_INPUT)
+-            if(useSystemVoiceInput) {
+-                SystemVoiceInputAction
+-            } else {
++            val offlineMode = context.getSetting(OFFLINE_MODE)
++            if(offlineMode) {
+                 VoiceInputAction
++            } else {
++                GroqVoiceInputAction
+             }
+         } else {
+             action
+diff --git a/java/src/org/futo/inputmethod/latin/uix/actions/VoiceInputAction.kt b/java/src/org/futo/inputmethod/latin/uix/actions/VoiceInputAction.kt
+index cef7af8a0..153ba9443 100644
+--- a/java/src/org/futo/inputmethod/latin/uix/actions/VoiceInputAction.kt
++++ b/java/src/org/futo/inputmethod/latin/uix/actions/VoiceInputAction.kt
+@@ -1,16 +1,23 @@
+ package org.futo.inputmethod.latin.uix.actions
+ 
++import android.Manifest
++import android.content.Context
+ import android.content.Intent
++import android.content.pm.PackageManager
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.interaction.MutableInteractionSource
+ import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.padding
++import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.MutableState
++import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.platform.LocalContext
+@@ -19,10 +26,12 @@ import androidx.compose.ui.semantics.semantics
+ import androidx.compose.ui.semantics.traversalIndex
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
++import kotlinx.coroutines.CancellationException
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.cancelAndJoin
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.runBlocking
++import kotlinx.coroutines.withContext
+ import kotlinx.coroutines.yield
+ import org.futo.inputmethod.latin.R
+ import org.futo.inputmethod.latin.uix.ANIMATE_BUBBLE
+@@ -33,6 +42,10 @@ import org.futo.inputmethod.latin.uix.CAN_EXPAND_SPACE
+ import org.futo.inputmethod.latin.uix.CloseResult
+ import org.futo.inputmethod.latin.uix.DISALLOW_SYMBOLS
+ import org.futo.inputmethod.latin.uix.ENABLE_SOUND
++import org.futo.inputmethod.latin.uix.GROQ_AI_MODEL
++import org.futo.inputmethod.latin.uix.GROQ_API_KEY
++import org.futo.inputmethod.latin.uix.GROQ_WHISPER_LANGUAGE
++import org.futo.inputmethod.latin.uix.GROQ_WHISPER_MODEL
+ import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
+ import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
+ import org.futo.inputmethod.latin.uix.PersistentActionState
+@@ -46,6 +59,9 @@ import org.futo.inputmethod.latin.uix.settings.SettingsActivity
+ import org.futo.inputmethod.latin.uix.utils.ModelOutputSanitizer
+ import org.futo.inputmethod.latin.xlm.UserDictionaryObserver
+ import org.futo.inputmethod.updates.openURI
++import org.futo.voiceinput.shared.GroqRecognizer
++import org.futo.voiceinput.shared.pauseMediaIfPlaying
++import org.futo.voiceinput.shared.resumeMedia
+ import org.futo.voiceinput.shared.ModelDoesNotExistException
+ import org.futo.voiceinput.shared.RecognizerView
+ import org.futo.voiceinput.shared.RecognizerViewListener
+@@ -320,4 +336,348 @@ val VoiceInputAction = Action(icon = R.drawable.mic_fill,
+             )
+         }
+     }
++)
++
++// ============ Groq Voice Input ============
++
++private class GroqVoiceInputActionWindow(
++    val manager: KeyboardManagerForAction
++) : ActionWindow(), RecognizerViewListener {
++    val context = manager.getContext()
++    private val soundPlayer = SoundPlayer(context)
++
++    private var statusText by mutableStateOf<String?>(null)
++    private var errorText by mutableStateOf<String?>(null)
++    private var inputTransaction = manager.createInputTransaction()
++    private var shouldPlaySounds = context.getSetting(ENABLE_SOUND)
++
++    private var recordingJob: kotlinx.coroutines.Job? = null
++    private val audioBuffer = mutableListOf<Float>()
++    private var hasStarted = false
++    private var stopRequested = false
++    private var wasMediaPlaying = false
++
++    @Composable
++    override fun windowName(): String {
++        return stringResource(R.string.action_voice_input_title)
++    }
++
++    @Composable
++    override fun WindowContents(keyboardShown: Boolean) {
++        val context = LocalContext.current
++        if (!hasStarted) {
++            hasStarted = true
++            startRecording()
++        }
++        Box(modifier = Modifier
++            .fillMaxSize()
++            .clickable(
++                enabled = true,
++                onClickLabel = null,
++                onClick = { stopRecordingAndTranscribe() },
++                role = null,
++                indication = null,
++                interactionSource = remember { MutableInteractionSource() })
++            .semantics(mergeDescendants = true) {
++                traversalIndex = -1.0f
++            }) {
++            Box(modifier = Modifier.align(Alignment.Center)) {
++                when {
++                    errorText != null -> {
++                        Text(
++                            text = errorText ?: "",
++                            modifier = Modifier.padding(8.dp),
++                            textAlign = TextAlign.Center,
++                            color = MaterialTheme.colorScheme.error
++                        )
++                    }
++                    statusText != null -> {
++                        Text(
++                            text = statusText ?: "",
++                            modifier = Modifier.padding(8.dp),
++                            textAlign = TextAlign.Center
++                        )
++                    }
++                    else -> {
++                        Text(
++                            stringResource(R.string.action_voice_input_title),
++                            modifier = Modifier.padding(8.dp),
++                            textAlign = TextAlign.Center
++                        )
++                    }
++                }
++            }
++        }
++    }
++
++    private fun startRecording() {
++        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
++            errorText = "Microphone permission not granted. Tap to open settings."
++            return
++        }
++
++        statusText = "Recording... Tap to finish"
++        errorText = null
++        audioBuffer.clear()
++        stopRequested = false
++
++        // Pause media only if it's actively playing — track whether we paused it
++        wasMediaPlaying = pauseMediaIfPlaying(context)
++
++        recordingJob = manager.getLifecycleScope().launch(Dispatchers.Default) {
++            try {
++                recordAudio()
++                // Normal completion (timed out or stopRequested was set)
++                if (audioBuffer.isNotEmpty()) {
++                    withContext(Dispatchers.Main) {
++                        statusText = "Processing..."
++                    }
++                    transcribeGroq()
++                }
++            } catch (e: CancellationException) {
++                // Job was cancelled externally — do nothing, transcribe has been triggered
++                // by stopRecordingAndTranscribe via the stopRequested flag path
++                throw e
++            } catch (e: Exception) {
++                withContext(Dispatchers.Main) {
++                    errorText = "Recording failed: ${e.message}"
++                }
++            }
++        }
++    }
++
++    private suspend fun recordAudio() {
++        val sampleRate = 16000
++        val bufferSize = android.media.AudioRecord.getMinBufferSize(
++            sampleRate,
++            android.media.AudioFormat.CHANNEL_IN_MONO,
++            android.media.AudioFormat.ENCODING_PCM_16BIT
++        )
++
++        val recorder = android.media.AudioRecord(
++            android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION,
++            sampleRate,
++            android.media.AudioFormat.CHANNEL_IN_MONO,
++            android.media.AudioFormat.ENCODING_PCM_16BIT,
++            bufferSize.coerceAtLeast(4096)
++        )
++
++        if (recorder.state != android.media.AudioRecord.STATE_INITIALIZED) {
++            withContext(Dispatchers.Main) {
++                errorText = "Failed to initialize audio recorder"
++            }
++            return
++        }
++
++        withContext(Dispatchers.Main) {
++            if (shouldPlaySounds) {
++                soundPlayer.playStartSound()
++            }
++        }
++
++        recorder.startRecording()
++
++        val shortBuffer = ShortArray(1600)
++        var totalSamples = 0
++        val maxSamples = sampleRate * 120 // 2 minutes max
++
++        while (totalSamples < maxSamples && !stopRequested) {
++            yield()
++            // Use READ_NON_BLOCKING so stopRequested is checked promptly
++            val nRead = recorder.read(shortBuffer, 0, 1600, android.media.AudioRecord.READ_NON_BLOCKING)
++            if (nRead <= 0) {
++                // No data yet — yield to allow cancellation/stopRequested checks
++                kotlinx.coroutines.delay(50)
++                continue
++            }
++
++            for (i in 0 until nRead) {
++                audioBuffer.add(shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat())
++            }
++            totalSamples += nRead
++        }
++
++        recorder.stop()
++        recorder.release()
++    }
++
++    private fun resumeMediaIfWePaused() {
++        if (wasMediaPlaying) {
++            resumeMedia(context)
++            wasMediaPlaying = false
++        }
++    }
++
++    private fun transcribeGroq() {
++        manager.getLifecycleScope().launch(Dispatchers.Default) {
++            try {
++                val apiKey = context.getSetting(GROQ_API_KEY)
++                if (apiKey.isBlank()) {
++                    withContext(Dispatchers.Main) {
++                        errorText = "Groq API key not set. Please configure it in Settings."
++                    }
++                    return@launch
++                }
++
++                val whisperModel = context.getSetting(GROQ_WHISPER_MODEL)
++                val whisperLanguage = context.getSetting(GROQ_WHISPER_LANGUAGE)
++                val aiModel = context.getSetting(GROQ_AI_MODEL)
++
++                val floatArray = audioBuffer.toFloatArray()
++
++                withContext(Dispatchers.Main) {
++                    statusText = "Transcribing..."
++                }
++
++                val transcriptionResult = GroqRecognizer.transcribe(
++                    apiKey = apiKey,
++                    audioData = floatArray,
++                    sampleRate = 16000,
++                    model = whisperModel,
++                    language = if (whisperLanguage == "auto") null else whisperLanguage
++                )
++
++                if (transcriptionResult.isFailure) {
++                    withContext(Dispatchers.Main) {
++                        errorText = "Transcription failed: ${transcriptionResult.exceptionOrNull()?.message}"
++                    }
++                    return@launch
++                }
++
++                val transcribedText = transcriptionResult.getOrThrow()
++
++                if (transcribedText.isBlank()) {
++                    withContext(Dispatchers.Main) {
++                        errorText = "No speech detected. Please try again."
++                    }
++                    return@launch
++                }
++
++                val finalText = if (aiModel.isBlank() || aiModel == "none") {
++                    transcribedText
++                } else {
++                    withContext(Dispatchers.Main) {
++                        statusText = "Enhancing..."
++                    }
++
++                    val enhancedResult = GroqRecognizer.enhanceText(
++                        apiKey = apiKey,
++                        text = transcribedText,
++                        model = aiModel
++                    )
++
++                    enhancedResult.getOrNull() ?: transcribedText
++                }
++
++                withContext(Dispatchers.Main) {
++                    if (shouldPlaySounds) {
++                        soundPlayer.playStartSound()
++                    }
++
++                    val sanitized = ModelOutputSanitizer.sanitize(finalText, inputTransaction.textContext)
++                    inputTransaction.commit(sanitized)
++                    manager.announce(finalText)
++                    manager.closeActionWindow()
++                }
++
++                // Resume media after successful transcription
++                resumeMediaIfWePaused()
++            } catch (e: Exception) {
++                withContext(Dispatchers.Main) {
++                    errorText = "Error: ${e.message}"
++                }
++                resumeMediaIfWePaused()
++            }
++        }
++    }
++
++    private fun stopRecordingAndTranscribe() {
++        stopRequested = true
++        // Let the recording loop exit naturally via the stopRequested flag,
++        // then transcribe will be triggered after recordAudio returns
++    }
++
++    override fun close(): CloseResult {
++        resumeMediaIfWePaused()
++        recordingJob?.cancel()
++        inputTransaction.cancel()
++        return CloseResult.Default
++    }
++
++    override fun cancelled() {
++        if (!wasFinished) {
++            if (shouldPlaySounds) {
++                soundPlayer.playCancelSound()
++            }
++            inputTransaction.cancel()
++            resumeMediaIfWePaused()
++        }
++    }
++
++    private var wasFinished = false
++    override fun finished(result: String) {
++        wasFinished = true
++    }
++
++    override fun partialResult(result: String) {}
++    override fun requestPermission(onGranted: () -> Unit, onRejected: () -> Unit): Boolean {
++        val intent = Intent()
++        intent.setClassName(context, "org.futo.inputmethod.latin.MicPermissionActivity")
++        intent.setFlags(
++            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
++        )
++        context.startActivity(intent)
++        return true
++    }
++    override fun openSettings() {
++        SettingsActivity.openToNavDest(context, "voiceInput")
++    }
++    override fun recordingStarted(device: MicrophoneDeviceState) {}
++}
++
++private class GroqVoiceInputNoApiKeyWindow : ActionWindow() {
++    @Composable
++    override fun windowName(): String {
++        return stringResource(R.string.action_voice_input_title)
++    }
++
++    @Composable
++    override fun WindowContents(keyboardShown: Boolean) {
++        val context = LocalContext.current
++        Box(modifier = Modifier
++            .fillMaxSize()
++            .clickable(
++                enabled = true,
++                onClick = {
++                    SettingsActivity.openToNavDest(context, "voiceInput")
++                },
++                indication = null,
++                interactionSource = remember { MutableInteractionSource() }
++            )) {
++            Text(
++                stringResource(R.string.voice_input_settings_groq_api_key_subtitle),
++                modifier = Modifier
++                    .align(Alignment.Center)
++                    .padding(8.dp),
++                textAlign = TextAlign.Center
++            )
++        }
++    }
++}
++
++val GroqVoiceInputAction = Action(
++    icon = R.drawable.mic_fill,
++    name = R.string.action_voice_input_title,
++    simplePressImpl = null,
++    keepScreenAwake = true,
++    persistentState = null,
++    windowImpl = { manager, _ ->
++        val context = manager.getContext()
++        val apiKey = context.getSetting(GROQ_API_KEY)
++        if (apiKey.isBlank()) {
++            GroqVoiceInputNoApiKeyWindow()
++        } else {
++            GroqVoiceInputActionWindow(manager = manager)
++        }
++    }
+ )
+\ No newline at end of file
+diff --git a/java/src/org/futo/inputmethod/latin/uix/settings/pages/Home.kt b/java/src/org/futo/inputmethod/latin/uix/settings/pages/Home.kt
+index 043e352e1..ffc8a77a5 100644
+--- a/java/src/org/futo/inputmethod/latin/uix/settings/pages/Home.kt
++++ b/java/src/org/futo/inputmethod/latin/uix/settings/pages/Home.kt
+@@ -33,7 +33,7 @@ import org.futo.inputmethod.latin.BuildConfig
+ import org.futo.inputmethod.latin.R
+ import org.futo.inputmethod.latin.uix.LocalNavController
+ import org.futo.inputmethod.latin.uix.TextEditPopupActivity
+-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
++import org.futo.inputmethod.latin.uix.OFFLINE_MODE
+ import org.futo.inputmethod.latin.uix.settings.NavigationItem
+ import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
+ import org.futo.inputmethod.latin.uix.settings.UserSetting
+@@ -90,8 +90,8 @@ val HomeScreenLite = UserSettingsMenu(
+             NavigationItem(
+                 title = stringResource(R.string.voice_input_settings_title),
+                 style = NavigationItemStyle.HomePrimary,
+-                subtitle = if(useDataStoreValue(USE_SYSTEM_VOICE_INPUT)) {
+-                    stringResource(R.string.voice_input_settings_builtin_disabled_notice)
++                subtitle = if(useDataStoreValue(OFFLINE_MODE)) {
++                    stringResource(R.string.voice_input_settings_offline_notice)
+                 } else { null },
+                 navigate = { navController!!.navigate(VoiceInputMenu.navPath) },
+                 icon = painterResource(R.drawable.mic_fill)
+diff --git a/java/src/org/futo/inputmethod/latin/uix/settings/pages/VoiceInput.kt b/java/src/org/futo/inputmethod/latin/uix/settings/pages/VoiceInput.kt
+index 2fff8bdb4..a3309fc38 100644
+--- a/java/src/org/futo/inputmethod/latin/uix/settings/pages/VoiceInput.kt
++++ b/java/src/org/futo/inputmethod/latin/uix/settings/pages/VoiceInput.kt
+@@ -1,100 +1,473 @@
+ package org.futo.inputmethod.latin.uix.settings.pages
+ 
+ import android.content.Intent
++import android.widget.Toast
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.text.KeyboardOptions
++import androidx.compose.material3.DropdownMenuItem
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.material3.ExposedDropdownMenuBox
++import androidx.compose.material3.ExposedDropdownMenuDefaults
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.OutlinedTextField
++import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.text.input.KeyboardType
++import androidx.compose.ui.text.input.PasswordVisualTransformation
++import androidx.compose.ui.text.input.VisualTransformation
++import androidx.compose.ui.unit.dp
+ import org.futo.inputmethod.latin.R
+ import org.futo.inputmethod.latin.uix.ANIMATE_BUBBLE
+ import org.futo.inputmethod.latin.uix.AUDIO_FOCUS
+ import org.futo.inputmethod.latin.uix.CAN_EXPAND_SPACE
+ import org.futo.inputmethod.latin.uix.DISALLOW_SYMBOLS
+ import org.futo.inputmethod.latin.uix.ENABLE_SOUND
++import org.futo.inputmethod.latin.uix.GROQ_AI_MODEL
++import org.futo.inputmethod.latin.uix.GROQ_API_KEY
++import org.futo.inputmethod.latin.uix.GROQ_WHISPER_LANGUAGE
++import org.futo.inputmethod.latin.uix.GROQ_WHISPER_MODEL
++import org.futo.inputmethod.latin.uix.OFFLINE_MODE
+ import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
+ import org.futo.inputmethod.latin.uix.USE_PERSONAL_DICT
+-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
+ import org.futo.inputmethod.latin.uix.USE_VAD_AUTOSTOP
+-import org.futo.inputmethod.latin.uix.VERBOSE_PROGRESS
++import org.futo.inputmethod.latin.uix.getSettingBlocking
++import org.futo.inputmethod.latin.uix.setSettingBlocking
+ import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
++import org.futo.inputmethod.latin.uix.settings.UserSetting
+ import org.futo.inputmethod.latin.uix.settings.UserSettingsMenu
+ import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
+ import org.futo.inputmethod.latin.uix.settings.userSettingNavigationItem
+ import org.futo.inputmethod.latin.uix.settings.userSettingToggleDataStore
+ 
+-private val visibilityCheckNotSystemVoiceInput = @Composable {
+-    useDataStoreValue(USE_SYSTEM_VOICE_INPUT) == false
++private val isOfflineMode = @Composable { useDataStoreValue(OFFLINE_MODE) == true }
++
++private val isOnlineMode = @Composable { useDataStoreValue(OFFLINE_MODE) == false }
++
++private val groqApiModels = listOf(
++    "none",
++    "openai/gpt-oss-120b",
++    "openai/gpt-oss-20b"
++)
++
++private val whisperModels = listOf(
++    "whisper-large-v3",
++    "whisper-large-v3-turbo"
++)
++
++private val whisperLanguages = listOf(
++    "auto" to "Auto-detect",
++    "en" to "English",
++    "zh" to "Chinese",
++    "de" to "German",
++    "es" to "Spanish",
++    "ru" to "Russian",
++    "ko" to "Korean",
++    "fr" to "French",
++    "ja" to "Japanese",
++    "pt" to "Portuguese",
++    "tr" to "Turkish",
++    "pl" to "Polish",
++    "ca" to "Catalan",
++    "nl" to "Dutch",
++    "ar" to "Arabic",
++    "sv" to "Swedish",
++    "it" to "Italian",
++    "id" to "Indonesian",
++    "hi" to "Hindi",
++    "fi" to "Finnish",
++    "vi" to "Vietnamese",
++    "he" to "Hebrew",
++    "uk" to "Ukrainian",
++    "el" to "Greek",
++    "ms" to "Malay",
++    "cs" to "Czech",
++    "ro" to "Romanian",
++    "da" to "Danish",
++    "hu" to "Hungarian",
++    "ta" to "Tamil",
++    "no" to "Norwegian",
++    "th" to "Thai",
++    "ur" to "Urdu",
++    "hr" to "Croatian",
++    "bg" to "Bulgarian",
++    "lt" to "Lithuanian",
++    "la" to "Latin",
++    "mi" to "Maori",
++    "ml" to "Malayalam",
++    "cy" to "Welsh",
++    "sk" to "Slovak",
++    "te" to "Telugu",
++    "fa" to "Persian",
++    "lv" to "Latvian",
++    "bn" to "Bengali",
++    "sr" to "Serbian",
++    "az" to "Azerbaijani",
++    "sl" to "Slovenian",
++    "kn" to "Kannada",
++    "et" to "Estonian",
++    "mk" to "Macedonian",
++    "br" to "Breton",
++    "eu" to "Basque",
++    "is" to "Icelandic",
++    "hy" to "Armenian",
++    "ne" to "Nepali",
++    "mn" to "Mongolian",
++    "bs" to "Bosnian",
++    "kk" to "Kazakh",
++    "sq" to "Albanian",
++    "sw" to "Swahili",
++    "gl" to "Galician",
++    "mr" to "Marathi",
++    "pa" to "Punjabi",
++    "si" to "Sinhala",
++    "km" to "Khmer",
++    "sn" to "Shona",
++    "yo" to "Yoruba",
++    "so" to "Somali",
++    "af" to "Afrikaans",
++    "oc" to "Occitan",
++    "ka" to "Georgian",
++    "be" to "Belarusian",
++    "tg" to "Tajik",
++    "sd" to "Sindhi",
++    "gu" to "Gujarati",
++    "am" to "Amharic",
++    "yi" to "Yiddish",
++    "lo" to "Lao",
++    "uz" to "Uzbek",
++    "fo" to "Faroese",
++    "ht" to "Haitian Creole",
++    "ps" to "Pashto",
++    "tk" to "Turkmen",
++    "nn" to "Norwegian Nynorsk",
++    "mt" to "Maltese",
++    "sa" to "Sanskrit",
++    "lb" to "Luxembourgish",
++    "my" to "Myanmar",
++    "bo" to "Tibetan",
++    "tl" to "Tagalog",
++    "mg" to "Malagasy",
++    "as" to "Assamese",
++    "tt" to "Tatar",
++    "haw" to "Hawaiian",
++    "ln" to "Lingala",
++    "ha" to "Hausa",
++    "ba" to "Bashkir",
++    "jw" to "Javanese",
++    "su" to "Sundanese",
++    "yue" to "Cantonese"
++)
++
++private val languageMap = whisperLanguages.associate { it.second to it.first }
++private val languageNames = whisperLanguages.map { it.second }
++private val languageCodes = whisperLanguages.map { it.first }
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++private fun GroqApiKeySetting() {
++    val context = LocalContext.current
++    val currentKey = remember { mutableStateOf(context.getSettingBlocking(GROQ_API_KEY)) }
++    var showKey by remember { mutableStateOf(false) }
++    val savedToast = remember { mutableStateOf<Toast?>(null) }
++
++    Column(modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
++        Text(
++            text = stringResource(R.string.voice_input_settings_groq_api_key),
++            style = MaterialTheme.typography.bodyLarge
++        )
++        Spacer(modifier = Modifier.height(4.dp))
++        Text(
++            text = stringResource(R.string.voice_input_settings_groq_api_key_subtitle),
++            style = MaterialTheme.typography.bodySmall,
++            color = MaterialTheme.colorScheme.onSurfaceVariant
++        )
++        Spacer(modifier = Modifier.height(4.dp))
++        Row(modifier = Modifier.fillMaxWidth()) {
++            OutlinedTextField(
++                value = currentKey.value,
++                onValueChange = { newValue ->
++                    currentKey.value = newValue
++                    context.setSettingBlocking(GROQ_API_KEY.key, newValue)
++                    savedToast.value?.cancel()
++                    Toast.makeText(context, "API key saved", Toast.LENGTH_SHORT).also {
++                        savedToast.value = it
++                        it.show()
++                    }
++                },
++                placeholder = { Text("gsk_...") },
++                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
++                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
++                singleLine = true,
++                modifier = Modifier.weight(1f),
++                textStyle = MaterialTheme.typography.bodyMedium
++            )
++        }
++    }
+ }
+ 
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++private fun GroqDropdownSetting(
++    label: String,
++    subtitle: String? = null,
++    options: List<String>,
++    selectedOption: String,
++    onOptionSelected: (String) -> Unit,
++    modifier: Modifier = Modifier
++) {
++    var expanded by remember { mutableStateOf(false) }
++    val selectedName = options.find { it == selectedOption } ?: selectedOption
++
++    Column(modifier = modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
++        Text(
++            text = label,
++            style = MaterialTheme.typography.bodyLarge
++        )
++        if (subtitle != null) {
++            Text(
++                text = subtitle,
++                style = MaterialTheme.typography.bodySmall,
++                color = MaterialTheme.colorScheme.onSurfaceVariant
++            )
++            Spacer(modifier = Modifier.height(4.dp))
++        } else {
++            Spacer(modifier = Modifier.height(4.dp))
++        }
++        ExposedDropdownMenuBox(
++            expanded = expanded,
++            onExpandedChange = { expanded = !expanded }
++        ) {
++            OutlinedTextField(
++                readOnly = true,
++                value = selectedName,
++                onValueChange = {},
++                trailingIcon = {
++                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
++                },
++                colors = ExposedDropdownMenuDefaults.textFieldColors(
++                    focusedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
++                    focusedTrailingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
++                ),
++                modifier = Modifier.menuAnchor().fillMaxWidth(),
++                singleLine = true,
++                textStyle = MaterialTheme.typography.bodyMedium
++            )
++            ExposedDropdownMenu(
++                expanded = expanded,
++                onDismissRequest = { expanded = false }
++            ) {
++                options.forEach { option ->
++                    DropdownMenuItem(
++                        text = { Text(option) },
++                        onClick = {
++                            onOptionSelected(option)
++                            expanded = false
++                        }
++                    )
++                }
++            }
++        }
++    }
++}
++
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++private fun GroqWhisperLanguageSetting() {
++    val context = LocalContext.current
++    val currentLanguage = remember { mutableStateOf(context.getSettingBlocking(GROQ_WHISPER_LANGUAGE)) }
++    var expanded by remember { mutableStateOf(false) }
++    val displayName = whisperLanguages.find { it.first == currentLanguage.value }?.second
++        ?: whisperLanguages.find { it.first == "en" }?.second ?: "English"
++
++    Column(modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
++        Text(
++            text = stringResource(R.string.voice_input_settings_whisper_language),
++            style = MaterialTheme.typography.bodyLarge
++        )
++        Spacer(modifier = Modifier.height(4.dp))
++        ExposedDropdownMenuBox(
++            expanded = expanded,
++            onExpandedChange = { expanded = !expanded }
++        ) {
++            OutlinedTextField(
++                readOnly = true,
++                value = displayName,
++                onValueChange = {},
++                trailingIcon = {
++                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
++                },
++                colors = ExposedDropdownMenuDefaults.textFieldColors(
++                    focusedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
++                    focusedTrailingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
++                ),
++                modifier = Modifier.menuAnchor().fillMaxWidth(),
++                singleLine = true,
++                textStyle = MaterialTheme.typography.bodyMedium
++            )
++            ExposedDropdownMenu(
++                expanded = expanded,
++                onDismissRequest = { expanded = false }
++            ) {
++                whisperLanguages.forEach { (code, name) ->
++                    DropdownMenuItem(
++                        text = { Text("$name ($code)") },
++                        onClick = {
++                            currentLanguage.value = code
++                            context.setSettingBlocking(GROQ_WHISPER_LANGUAGE.key, code)
++                            expanded = false
++                        }
++                    )
++                }
++            }
++        }
++    }
++}
++
++private val offlineModeToggle = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_offline_mode,
++    subtitle = R.string.voice_input_settings_offline_mode_subtitle,
++    setting = OFFLINE_MODE
++)
++
++private val groqApiKeySetting = UserSetting(
++    name = R.string.voice_input_settings_groq_api_key,
++    component = { GroqApiKeySetting() },
++    visibilityCheck = isOnlineMode
++)
++
++private val groqWhisperModelSetting = UserSetting(
++    name = R.string.voice_input_settings_whisper_model,
++    component = {
++        val context = LocalContext.current
++        val currentModel = remember { mutableStateOf(context.getSettingBlocking(GROQ_WHISPER_MODEL)) }
++        GroqDropdownSetting(
++            label = stringResource(R.string.voice_input_settings_whisper_model),
++            options = whisperModels,
++            selectedOption = currentModel.value,
++            onOptionSelected = {
++                currentModel.value = it
++                context.setSettingBlocking(GROQ_WHISPER_MODEL.key, it)
++            }
++        )
++    },
++    visibilityCheck = isOnlineMode
++)
++
++private val groqWhisperLanguageSetting = UserSetting(
++    name = R.string.voice_input_settings_whisper_language,
++    component = { GroqWhisperLanguageSetting() },
++    visibilityCheck = isOnlineMode
++)
++
++private val groqAiModelSetting = UserSetting(
++    name = R.string.voice_input_settings_ai_model,
++    component = {
++        val context = LocalContext.current
++        val currentModel = remember { mutableStateOf(context.getSettingBlocking(GROQ_AI_MODEL)) }
++        GroqDropdownSetting(
++            label = stringResource(R.string.voice_input_settings_ai_model),
++            subtitle = stringResource(R.string.voice_input_settings_ai_model_subtitle),
++            options = groqApiModels,
++            selectedOption = currentModel.value,
++            onOptionSelected = {
++                currentModel.value = it
++                context.setSettingBlocking(GROQ_AI_MODEL.key, it)
++            }
++        )
++    },
++    visibilityCheck = isOnlineMode
++)
++
++// Offline mode settings (same as original, but with visibilityCheck inverted)
++private val offlineIndicationSounds = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_indication_sounds,
++    subtitle = R.string.voice_input_settings_indication_sounds_subtitle,
++    setting = ENABLE_SOUND
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineUsePersonalDict = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_use_personal_dict,
++    subtitle = R.string.voice_input_settings_use_personal_dict_subtitle,
++    setting = USE_PERSONAL_DICT
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlinePreferBluetooth = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_use_bluetooth_mic,
++    subtitle = R.string.voice_input_settings_use_bluetooth_mic_subtitle,
++    setting = PREFER_BLUETOOTH
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineAudioFocus = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_audio_focus,
++    subtitle = R.string.voice_input_settings_audio_focus_subtitle,
++    setting = AUDIO_FOCUS
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineSuppressSymbols = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_suppress_symbols,
++    setting = DISALLOW_SYMBOLS
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineLongForm = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_long_form,
++    subtitle = R.string.voice_input_settings_long_form_subtitle,
++    setting = CAN_EXPAND_SPACE
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineAutostopVad = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_autostop_vad,
++    subtitle = R.string.voice_input_settings_autostop_vad_subtitle,
++    setting = USE_VAD_AUTOSTOP
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineAnimateBubble = userSettingToggleDataStore(
++    title = R.string.voice_input_settings_animate_bubble,
++    subtitle = R.string.voice_input_settings_animate_bubble_subtitle,
++    setting = ANIMATE_BUBBLE
++).copy(visibilityCheck = isOfflineMode)
++
++private val offlineChangeModels = userSettingNavigationItem(
++    title = R.string.voice_input_settings_change_models,
++    subtitle = R.string.voice_input_settings_change_models_subtitle,
++    style = NavigationItemStyle.Misc,
++    navigateTo = "languages"
++).copy(visibilityCheck = isOfflineMode)
++
+ val VoiceInputMenu = UserSettingsMenu(
+     title = R.string.voice_input_settings_title,
+     navPath = "voiceInput", registerNavPath = true,
+     settings = listOf(
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_disable_builtin_voice_input,
+-            subtitle = R.string.voice_input_settings_disable_builtin_voice_input_subtitle,
+-            setting = USE_SYSTEM_VOICE_INPUT
+-        ),
+-
+-        //if(!systemVoiceInput.value) {
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_indication_sounds,
+-            subtitle = R.string.voice_input_settings_indication_sounds_subtitle,
+-            setting = ENABLE_SOUND
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        /*
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_verbose_progress,
+-            subtitle = R.string.voice_input_settings_verbose_progress_subtitle,
+-            setting = VERBOSE_PROGRESS
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-         */
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_use_personal_dict,
+-            subtitle = R.string.voice_input_settings_use_personal_dict_subtitle,
+-            setting = USE_PERSONAL_DICT
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_use_bluetooth_mic,
+-            subtitle = R.string.voice_input_settings_use_bluetooth_mic_subtitle,
+-            setting = PREFER_BLUETOOTH
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_audio_focus,
+-            subtitle = R.string.voice_input_settings_audio_focus_subtitle,
+-            setting = AUDIO_FOCUS
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_suppress_symbols,
+-            setting = DISALLOW_SYMBOLS
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_long_form,
+-            subtitle = R.string.voice_input_settings_long_form_subtitle,
+-            setting = CAN_EXPAND_SPACE
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_autostop_vad,
+-            subtitle = R.string.voice_input_settings_autostop_vad_subtitle,
+-            setting = USE_VAD_AUTOSTOP
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingToggleDataStore(
+-            title = R.string.voice_input_settings_animate_bubble,
+-            subtitle = R.string.voice_input_settings_animate_bubble_subtitle,
+-            setting = ANIMATE_BUBBLE
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-
+-        userSettingNavigationItem(
+-            title = R.string.voice_input_settings_change_models,
+-            subtitle = R.string.voice_input_settings_change_models_subtitle,
+-            style = NavigationItemStyle.Misc,
+-            navigateTo = "languages"
+-        ).copy(visibilityCheck = visibilityCheckNotSystemVoiceInput),
+-        //}
++        // Online mode settings (visible when offline mode is OFF)
++        groqApiKeySetting,
++        groqWhisperModelSetting,
++        groqWhisperLanguageSetting,
++        groqAiModelSetting,
++
++        // Offline mode settings (visible when offline mode is ON)
++        offlineIndicationSounds,
++        offlineUsePersonalDict,
++        offlinePreferBluetooth,
++        offlineAudioFocus,
++        offlineSuppressSymbols,
++        offlineLongForm,
++        offlineAutostopVad,
++        offlineAnimateBubble,
++        offlineChangeModels,
++
++        // Offline mode toggle (always visible at bottom)
++        offlineModeToggle
+     )
+ )
+\ No newline at end of file
+diff --git a/tools/make-keyboard-text-py/src/generate.py b/tools/make-keyboard-text-py/src/generate.py
+index e91d47967..3b82bd8f4 100644
+--- a/tools/make-keyboard-text-py/src/generate.py
++++ b/tools/make-keyboard-text-py/src/generate.py
+@@ -6,7 +6,7 @@ import glob
+ def load_data():
+     all_data = []
+     for fname in glob.glob("locales/*.json"):
+-        with open(fname, "r") as f:
++        with open(fname, "r", encoding='utf-8') as f:
+             all_data.append(json.loads(f.read()))
+ 
+     return all_data
+diff --git a/voiceinput-shared/build.gradle b/voiceinput-shared/build.gradle
+index fc8eb252c..4e6726382 100644
+--- a/voiceinput-shared/build.gradle
++++ b/voiceinput-shared/build.gradle
+@@ -2,6 +2,7 @@ plugins {
+     id 'com.android.library' version '8.10.1'
+     id 'org.jetbrains.kotlin.android' version '2.1.0'
+     id 'org.jetbrains.kotlin.plugin.compose' version '2.1.0'
++    id 'org.jetbrains.kotlin.plugin.serialization' version '2.1.0'
+ }
+ 
+ final def translationsWithoutEngValues = { final String path ->
+diff --git a/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/AudioRecognizer.kt b/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/AudioRecognizer.kt
+index 22e130b09..987f8ca98 100644
+--- a/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/AudioRecognizer.kt
++++ b/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/AudioRecognizer.kt
+@@ -16,6 +16,7 @@ import android.net.Uri
+ import android.os.Build
+ import android.provider.Settings
+ import android.util.Log
++import android.view.KeyEvent
+ import androidx.lifecycle.LifecycleCoroutineScope
+ import com.konovalov.vad.Vad
+ import com.konovalov.vad.config.FrameSize
+@@ -92,6 +93,37 @@ data class AudioRecognizerSettings(
+ 
+ class ModelDoesNotExistException(val models: List<ModelLoader>) : Throwable()
+ 
++/**
++ * Check if media is currently playing. If so, pause it and return true.
++ * The caller should store this result to know whether to resume later.
++ */
++fun pauseMediaIfPlaying(context: Context): Boolean {
++    try {
++        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
++        if (audioManager.isMusicActive) {
++            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
++            audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
++            return true
++        }
++    } catch(e: Exception) {
++        Log.e("AudioRecognizer", "Failed to pause media", e)
++    }
++    return false
++}
++
++/**
++ * Resume media playback. Only call this if [pauseMediaIfPlaying] returned true.
++ */
++fun resumeMedia(context: Context) {
++    try {
++        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
++        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
++        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
++    } catch(e: Exception) {
++        Log.e("AudioRecognizer", "Failed to resume media", e)
++    }
++}
++
+ class AudioRecognizer(
+     private val context: Context,
+     private val lifecycleScope: LifecycleCoroutineScope,
+@@ -115,6 +147,7 @@ class AudioRecognizer(
+     private var focusRequest: AudioFocusRequest? = null
+ 
+     private var communicationDevice = "unknown"
++    private var wasMediaPlaying = false
+ 
+     private fun focusAudio() {
+         unfocusAudio()
+@@ -230,6 +263,12 @@ class AudioRecognizer(
+         unfocusAudio()
+ 
+         clearCommunicationDevice()
++
++        // Only resume media if we were the ones who paused it
++        if (wasMediaPlaying) {
++            resumeMedia(context)
++            wasMediaPlaying = false
++        }
+     }
+ 
+     fun finish() {
+@@ -509,6 +548,9 @@ class AudioRecognizer(
+ 
+         focusAudio()
+ 
++        // Pause media only if it's actively playing — track whether we paused it
++        wasMediaPlaying = pauseMediaIfPlaying(context)
++
+         listener.recordingStarted(device)
+ 
+         loadModelJob = lifecycleScope.launch {
+diff --git a/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/Models.kt b/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/Models.kt
+index bb082ed16..a67de59c4 100644
+--- a/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/Models.kt
++++ b/voiceinput-shared/src/main/java/org/futo/voiceinput/shared/Models.kt
+@@ -6,13 +6,13 @@ import org.futo.voiceinput.shared.types.ModelLoader
+ 
+ val BUILTIN_ENGLISH_MODEL: ModelLoader = ModelBuiltInAsset(
+     name = R.string.tiny_en_name,
+-    ggmlFile = "tiny_en_acft_q8_0.bin.not.tflite"
++    ggmlFile = "tiny_en_acft_q8_0.bin.tflite"
+ )
+ 
+ val ENGLISH_MODELS: List<ModelLoader> = listOf(
+     ModelBuiltInAsset(
+         name = R.string.tiny_en_name,
+-        ggmlFile = "tiny_en_acft_q8_0.bin.not.tflite"
++        ggmlFile = "tiny_en_acft_q8_0.bin.tflite"
+     ),
+ 
+     ModelDownloadable(
+diff --git a/voiceinput-shared/src/main/ml b/voiceinput-shared/src/main/ml
+--- a/voiceinput-shared/src/main/ml
++++ b/voiceinput-shared/src/main/ml
+@@ -1 +1 @@
+-Subproject commit 7692bc6096c51c44beba716a3c429ff09dbfffd9
++Subproject commit 7692bc6096c51c44beba716a3c429ff09dbfffd9-dirty

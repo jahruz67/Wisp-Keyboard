@@ -33,7 +33,7 @@ import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.LocalNavController
 import org.futo.inputmethod.latin.uix.TextEditPopupActivity
-import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
+import org.futo.inputmethod.latin.uix.OFFLINE_MODE
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.UserSetting
@@ -90,8 +90,8 @@ val HomeScreenLite = UserSettingsMenu(
             NavigationItem(
                 title = stringResource(R.string.voice_input_settings_title),
                 style = NavigationItemStyle.HomePrimary,
-                subtitle = if(useDataStoreValue(USE_SYSTEM_VOICE_INPUT)) {
-                    stringResource(R.string.voice_input_settings_builtin_disabled_notice)
+                subtitle = if(useDataStoreValue(OFFLINE_MODE)) {
+                    stringResource(R.string.voice_input_settings_offline_notice)
                 } else { null },
                 navigate = { navController!!.navigate(VoiceInputMenu.navPath) },
                 icon = painterResource(R.drawable.mic_fill)
