@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.futo.voiceinput.shared.R
 import org.futo.voiceinput.shared.types.MagnitudeState
+import org.futo.voiceinput.shared.ui.theme.Typography
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.getValue
