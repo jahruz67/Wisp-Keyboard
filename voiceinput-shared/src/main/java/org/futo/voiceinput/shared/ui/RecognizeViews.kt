@@ -69,9 +69,12 @@ data class MicrophoneDeviceState(
 )
 
 @Composable
-fun AnimatedRecognizeCircle(magnitude: MutableFloatState = mutableFloatStateOf(0.5f)) {
+fun AnimatedRecognizeCircle(
+    magnitude: MutableFloatState = mutableFloatStateOf(0.5f),
+    alpha: Float = 0.55f
+) {
     val radius = animateValueChanges(magnitude.floatValue, 100)
-    val color = MaterialTheme.colorScheme.primaryContainer
+    val color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
 
     val radiusMod = with(LocalDensity.current) {
         80.dp.toPx()
@@ -176,15 +179,6 @@ fun InnerRecognize(
     device: MutableState<MicrophoneDeviceState>? = null
 ) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        AnimatedRecognizeCircle(magnitude = magnitude)
-
-        Icon(
-            painter = painterResource(R.drawable.mic_2_),
-            contentDescription = stringResource(R.string.stop_recording),
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-
         val text = when (state.value) {
             MagnitudeState.NOT_TALKED_YET -> stringResource(R.string.try_saying_something)
             MagnitudeState.MIC_MAY_BE_BLOCKED -> stringResource(R.string.no_audio_detected_is_your_microphone_blocked)
@@ -197,7 +191,17 @@ fun InnerRecognize(
                 .fillMaxWidth()
                 .offset(x = 0.dp, y = 48.dp),
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface
+            style = Typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        AnimatedRecognizeCircle(magnitude = magnitude, alpha = 0.55f)
+
+        Icon(
+            painter = painterResource(R.drawable.mic_2_),
+            contentDescription = stringResource(R.string.stop_recording),
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.onPrimaryContainer
         )
 
         BluetoothToggleIcon(device)
