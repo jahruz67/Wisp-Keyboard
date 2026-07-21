@@ -58,7 +58,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.futo.voiceinput.shared.R
 import org.futo.voiceinput.shared.types.MagnitudeState
-import org.futo.voiceinput.shared.ui.theme.Typography
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.clipToBounds
+import kotlin.math.min
 
 data class MicrophoneDeviceState(
     val bluetoothAvailable: Boolean,
@@ -73,15 +77,25 @@ fun AnimatedRecognizeCircle(
     magnitude: MutableFloatState = mutableFloatStateOf(0.5f),
     alpha: Float = 0.55f
 ) {
-    val radius = animateValueChanges(magnitude.floatValue, 100)
+    val animatedRadius by animateFloatAsState(
+        targetValue = magnitude.floatValue.coerceIn(0.0f, 1.0f),
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = 150f
+        ),
+        label = "voice_wave_radius"
+    )
+
     val color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
 
-    val radiusMod = with(LocalDensity.current) {
-        80.dp.toPx()
-    }
+    val minRadiusPx = with(LocalDensity.current) { 40.dp.toPx() }
+    val paddingPx = with(LocalDensity.current) { 12.dp.toPx() }
 
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val drawRadius = radiusMod * (0.8f + radius * 2.0f)
+    Canvas(modifier = Modifier.fillMaxSize().clipToBounds()) {
+        val maxAllowedRadius = (min(size.width, size.height) / 2.0f) - paddingPx
+        val maxRadiusPx = maxOf(minRadiusPx, maxAllowedRadius)
+        val drawRadius = minRadiusPx + (maxRadiusPx - minRadiusPx) * animatedRadius
+
         drawCircle(color = color, radius = drawRadius)
     }
 }
