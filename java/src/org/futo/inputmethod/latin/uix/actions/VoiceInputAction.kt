@@ -68,14 +68,24 @@ import org.futo.voiceinput.shared.RecognizerViewListener
 import org.futo.voiceinput.shared.RecognizerViewSettings
 import org.futo.voiceinput.shared.RecordingSettings
 import org.futo.voiceinput.shared.SoundPlayer
+import androidx.compose.runtime.mutableFloatStateOf
 import org.futo.voiceinput.shared.types.Language
+import org.futo.voiceinput.shared.types.MagnitudeState
 import org.futo.voiceinput.shared.types.ModelLoader
 import org.futo.voiceinput.shared.types.getLanguageFromWhisperString
+import org.futo.voiceinput.shared.clearCommunicationDevice
+import org.futo.voiceinput.shared.isBluetoothAvailable
+import org.futo.voiceinput.shared.setCommunicationDevice
+import org.futo.voiceinput.shared.ui.RecognizeMicError
+import org.futo.voiceinput.shared.ui.InnerRecognize
 import org.futo.voiceinput.shared.ui.MicrophoneDeviceState
+import org.futo.voiceinput.shared.ui.RecognizeLoadingCircle
 import org.futo.voiceinput.shared.whisper.DecodingConfiguration
 import org.futo.voiceinput.shared.whisper.ModelManager
 import org.futo.voiceinput.shared.whisper.MultiModelRunConfiguration
 import java.util.Locale
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 val SystemVoiceInputAction = Action(
     icon = R.drawable.mic_fill,
@@ -346,8 +356,24 @@ private class GroqVoiceInputActionWindow(
     val context = manager.getContext()
     private val soundPlayer = SoundPlayer(context)
 
+    private enum class CurrentView {
+        LoadingCircle, InnerRecognize, PermissionError, Error
+    }
+
     private var statusText by mutableStateOf<String?>(null)
     private var errorText by mutableStateOf<String?>(null)
+    private var currentViewState by mutableStateOf(CurrentView.LoadingCircle)
+
+    private val magnitudeState = mutableFloatStateOf(0.0f)
+    private val statusState = mutableStateOf(MagnitudeState.NOT_TALKED_YET)
+    private val currentDeviceState = mutableStateOf(MicrophoneDeviceState(
+        bluetoothAvailable = false,
+        bluetoothActive = false,
+        setBluetooth = { },
+        deviceName = "",
+        bluetoothPreferredByUser = false
+    ))
+
     private var inputTransaction = manager.createInputTransaction()
     private var shouldPlaySounds = context.getSetting(ENABLE_SOUND)
 
@@ -372,7 +398,7 @@ private class GroqVoiceInputActionWindow(
         Box(modifier = Modifier
             .fillMaxSize()
             .clickable(
-                enabled = true,
+                enabled = currentViewState == CurrentView.InnerRecognize,
                 onClickLabel = null,
                 onClick = { stopRecordingAndTranscribe() },
                 role = null,
@@ -382,28 +408,39 @@ private class GroqVoiceInputActionWindow(
                 traversalIndex = -1.0f
             }) {
             Box(modifier = Modifier.align(Alignment.Center)) {
-                when {
-                    errorText != null -> {
-                        Text(
-                            text = errorText ?: "",
-                            modifier = Modifier.padding(8.dp),
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.error
+                when (currentViewState) {
+                    CurrentView.LoadingCircle -> {
+                        Column {
+                            RecognizeLoadingCircle(text = statusText ?: stringResource(org.futo.voiceinput.shared.R.string.processing))
+                        }
+                    }
+                    CurrentView.InnerRecognize -> {
+                        InnerRecognize(
+                            magnitude = magnitudeState,
+                            state = statusState,
+                            device = currentDeviceState
                         )
                     }
-                    statusText != null -> {
-                        Text(
-                            text = statusText ?: "",
-                            modifier = Modifier.padding(8.dp),
-                            textAlign = TextAlign.Center
-                        )
+                    CurrentView.PermissionError -> {
+                        Column {
+                            RecognizeMicError(openSettings = {
+                                requestPermission(onGranted = { startRecording() }, onRejected = {})
+                            })
+                        }
                     }
-                    else -> {
-                        Text(
-                            stringResource(R.string.action_voice_input_title),
-                            modifier = Modifier.padding(8.dp),
-                            textAlign = TextAlign.Center
-                        )
+                    CurrentView.Error -> {
+                        Box(modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(onClick = { openSettings() })) {
+                            Text(
+                                text = errorText ?: stringResource(org.futo.voiceinput.shared.R.string.model_load_error),
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(8.dp),
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
@@ -412,11 +449,30 @@ private class GroqVoiceInputActionWindow(
 
     private fun startRecording() {
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            errorText = "Microphone permission not granted. Tap to open settings."
+            currentViewState = CurrentView.PermissionError
             return
         }
 
-        statusText = "Recording... Tap to finish"
+        val preferBluetooth = context.getSetting(PREFER_BLUETOOTH)
+        val (bluetoothActive, deviceName) = setCommunicationDevice(context, preferBluetooth)
+        val bluetoothAvailable = isBluetoothAvailable(context)
+
+        currentDeviceState.value = MicrophoneDeviceState(
+            bluetoothAvailable = bluetoothAvailable,
+            bluetoothActive = bluetoothActive,
+            bluetoothPreferredByUser = preferBluetooth,
+            setBluetooth = { enable ->
+                manager.getLifecycleScope().launch {
+                    context.setSetting(PREFER_BLUETOOTH, enable)
+                    stopRequested = true
+                    recordingJob?.cancelAndJoin()
+                    startRecording()
+                }
+            },
+            deviceName = deviceName
+        )
+
+        statusText = null
         errorText = null
         audioBuffer.clear()
         stopRequested = false
@@ -430,16 +486,16 @@ private class GroqVoiceInputActionWindow(
                 // Normal completion (timed out or stopRequested was set)
                 if (audioBuffer.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
-                        statusText = "Processing..."
+                        currentViewState = CurrentView.LoadingCircle
+                        statusText = context.getString(org.futo.voiceinput.shared.R.string.processing)
                     }
                     transcribeGroq()
                 }
             } catch (e: CancellationException) {
-                // Job was cancelled externally — do nothing, transcribe has been triggered
-                // by stopRecordingAndTranscribe via the stopRequested flag path
                 throw e
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    currentViewState = CurrentView.Error
                     errorText = "Recording failed: ${e.message}"
                 }
             }
@@ -464,6 +520,7 @@ private class GroqVoiceInputActionWindow(
 
         if (recorder.state != android.media.AudioRecord.STATE_INITIALIZED) {
             withContext(Dispatchers.Main) {
+                currentViewState = CurrentView.Error
                 errorText = "Failed to initialize audio recorder"
             }
             return
@@ -473,6 +530,9 @@ private class GroqVoiceInputActionWindow(
             if (shouldPlaySounds) {
                 soundPlayer.playStartSound()
             }
+            magnitudeState.floatValue = 0.0f
+            statusState.value = MagnitudeState.NOT_TALKED_YET
+            currentViewState = CurrentView.InnerRecognize
         }
 
         recorder.startRecording()
@@ -480,21 +540,39 @@ private class GroqVoiceInputActionWindow(
         val shortBuffer = ShortArray(1600)
         var totalSamples = 0
         val maxSamples = sampleRate * 120 // 2 minutes max
+        var hasTalked = false
 
         while (totalSamples < maxSamples && !stopRequested) {
             yield()
-            // Use READ_NON_BLOCKING so stopRequested is checked promptly
             val nRead = recorder.read(shortBuffer, 0, 1600, android.media.AudioRecord.READ_NON_BLOCKING)
             if (nRead <= 0) {
-                // No data yet — yield to allow cancellation/stopRequested checks
                 kotlinx.coroutines.delay(50)
                 continue
             }
 
+            var sumSq = 0.0
             for (i in 0 until nRead) {
-                audioBuffer.add(shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat())
+                val floatSample = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
+                audioBuffer.add(floatSample)
+                sumSq += floatSample * floatSample
             }
             totalSamples += nRead
+
+            val rms = sqrt(sumSq / nRead).toFloat()
+            if (rms > 0.01f) {
+                hasTalked = true
+            }
+            val magnitude = (1.0f - 0.1f.toDouble().pow(24.0 * rms)).toFloat()
+            val state = if (hasTalked) {
+                MagnitudeState.TALKING
+            } else {
+                MagnitudeState.NOT_TALKED_YET
+            }
+
+            withContext(Dispatchers.Main) {
+                magnitudeState.floatValue = magnitude
+                statusState.value = state
+            }
         }
 
         recorder.stop()
@@ -514,6 +592,7 @@ private class GroqVoiceInputActionWindow(
                 val apiKey = context.getSetting(GROQ_API_KEY)
                 if (apiKey.isBlank()) {
                     withContext(Dispatchers.Main) {
+                        currentViewState = CurrentView.Error
                         errorText = "Groq API key not set. Please configure it in Settings."
                     }
                     return@launch
@@ -526,7 +605,8 @@ private class GroqVoiceInputActionWindow(
                 val floatArray = audioBuffer.toFloatArray()
 
                 withContext(Dispatchers.Main) {
-                    statusText = "Transcribing..."
+                    currentViewState = CurrentView.LoadingCircle
+                    statusText = context.getString(org.futo.voiceinput.shared.R.string.decoding)
                 }
 
                 val transcriptionResult = GroqRecognizer.transcribe(
@@ -539,6 +619,7 @@ private class GroqVoiceInputActionWindow(
 
                 if (transcriptionResult.isFailure) {
                     withContext(Dispatchers.Main) {
+                        currentViewState = CurrentView.Error
                         errorText = "Transcription failed: ${transcriptionResult.exceptionOrNull()?.message}"
                     }
                     return@launch
@@ -548,6 +629,7 @@ private class GroqVoiceInputActionWindow(
 
                 if (transcribedText.isBlank()) {
                     withContext(Dispatchers.Main) {
+                        currentViewState = CurrentView.Error
                         errorText = "No speech detected. Please try again."
                     }
                     return@launch
@@ -557,6 +639,7 @@ private class GroqVoiceInputActionWindow(
                     transcribedText
                 } else {
                     withContext(Dispatchers.Main) {
+                        currentViewState = CurrentView.LoadingCircle
                         statusText = "Enhancing..."
                     }
 
@@ -584,6 +667,7 @@ private class GroqVoiceInputActionWindow(
                 resumeMediaIfWePaused()
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    currentViewState = CurrentView.Error
                     errorText = "Error: ${e.message}"
                 }
                 resumeMediaIfWePaused()
@@ -592,12 +676,14 @@ private class GroqVoiceInputActionWindow(
     }
 
     private fun stopRecordingAndTranscribe() {
+        if (stopRequested) return
         stopRequested = true
-        // Let the recording loop exit naturally via the stopRequested flag,
-        // then transcribe will be triggered after recordAudio returns
+        currentViewState = CurrentView.LoadingCircle
+        statusText = context.getString(org.futo.voiceinput.shared.R.string.processing)
     }
 
     override fun close(): CloseResult {
+        clearCommunicationDevice(context)
         resumeMediaIfWePaused()
         recordingJob?.cancel()
         inputTransaction.cancel()
@@ -609,6 +695,7 @@ private class GroqVoiceInputActionWindow(
             if (shouldPlaySounds) {
                 soundPlayer.playCancelSound()
             }
+            clearCommunicationDevice(context)
             inputTransaction.cancel()
             resumeMediaIfWePaused()
         }

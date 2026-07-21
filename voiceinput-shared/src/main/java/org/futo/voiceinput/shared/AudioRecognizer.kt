@@ -124,6 +124,61 @@ fun resumeMedia(context: Context) {
     }
 }
 
+/**
+ * Check if a Bluetooth SCO recording device is available.
+ */
+fun isBluetoothAvailable(context: Context): Boolean {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val devices = audioManager.availableCommunicationDevices
+
+            return devices.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            } != null
+        }
+    } catch(_: Exception) {}
+
+    return false
+}
+
+/**
+ * Set the communication device to Bluetooth or Built-in microphone.
+ */
+fun setCommunicationDevice(context: Context, preferBluetoothMic: Boolean): Pair<Boolean, String> {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val devices = audioManager.availableCommunicationDevices
+            val tgtDevice =
+                devices.firstOrNull { preferBluetoothMic && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } ?:
+                devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC } ?:
+                devices.firstOrNull { it.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO  } ?:
+                devices.firstOrNull()
+
+            if (tgtDevice != null && !audioManager.setCommunicationDevice(tgtDevice)) {
+                audioManager.clearCommunicationDevice()
+                return Pair(false, "")
+            } else if (tgtDevice != null) {
+                return Pair(tgtDevice.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO, tgtDevice.productName.toString())
+            }
+        }
+    } catch(_: Exception) {}
+    return Pair(false, "")
+}
+
+/**
+ * Clear communication device.
+ */
+fun clearCommunicationDevice(context: Context) {
+    try {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice()
+        }
+    } catch(_: Exception) {}
+}
+
 class AudioRecognizer(
     private val context: Context,
     private val lifecycleScope: LifecycleCoroutineScope,
@@ -181,49 +236,12 @@ class AudioRecognizer(
         }
     }
 
-    private fun isBluetoothAvailable(): Boolean {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val devices = audioManager.availableCommunicationDevices
+    private fun isBluetoothAvailable(): Boolean = isBluetoothAvailable(context)
 
-                return devices.firstOrNull {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                } != null
-            }
-        } catch(_: Exception) {}
+    private fun setCommunicationDevice(preferBluetoothMic: Boolean): Pair<Boolean, String> =
+        setCommunicationDevice(context, preferBluetoothMic)
 
-        return false
-    }
-
-    private fun setCommunicationDevice(preferBluetoothMic: Boolean): Pair<Boolean, String> {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val devices = audioManager.availableCommunicationDevices
-                val tgtDevice =
-                    devices.firstOrNull { preferBluetoothMic && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } ?:
-                    devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC } ?:
-                    devices.firstOrNull { it.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO  } ?:
-                    devices.first()
-
-                if (!audioManager.setCommunicationDevice(tgtDevice)) {
-                    audioManager.clearCommunicationDevice()
-                    return Pair(false, "")
-                } else {
-                    return Pair(tgtDevice.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO, tgtDevice.productName.toString())
-                }
-            }
-        } catch(_: Exception) {}
-        return Pair(false, "")
-    }
-
-    private fun clearCommunicationDevice() {
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audioManager.clearCommunicationDevice()
-        }
-    }
+    private fun clearCommunicationDevice() = clearCommunicationDevice(context)
 
     @Throws(ModelDoesNotExistException::class)
     private fun verifyModelsExist() {
