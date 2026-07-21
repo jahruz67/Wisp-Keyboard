@@ -967,6 +967,7 @@ class PersistentEmojiState : PersistentActionState {
         }
 
         @JvmStatic
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         fun loadTranslationsForLanguage(context: Context, locale: Locale) {
             val language = locale.language
             if (loadedTranslations.contains(language)) return

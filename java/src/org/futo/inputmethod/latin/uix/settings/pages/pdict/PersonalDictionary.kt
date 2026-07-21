@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package org.futo.inputmethod.latin.uix.settings.pages.pdict
 
 import android.app.Activity

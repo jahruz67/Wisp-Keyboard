@@ -1,9 +1,13 @@
+@file:OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+@file:Suppress("DEPRECATION")
+
 package org.futo.inputmethod.latin.xlm
 
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.LifecycleCoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
@@ -16,7 +20,6 @@ import org.futo.inputmethod.latin.utils.JniUtils
 import java.util.Arrays
 import java.util.Locale
 
-@OptIn(DelicateCoroutinesApi::class)
 val LanguageModelScope = newSingleThreadContext("LanguageModel")
 
 class ModelLoadingException(message: String): Exception(message)

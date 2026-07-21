@@ -56,7 +56,7 @@ fun FinetuningStateDisplay(navController: NavHostController, trainingState: Trai
     Column(modifier = Modifier.padding(16.dp, 16.dp)) {
         Text("Progress: ${(progress * 100.0f).roundToInt()}%")
         LinearProgressIndicator(
-            progress = progress,
+            progress = { progress },
             modifier = Modifier.fillMaxWidth()
         )
 

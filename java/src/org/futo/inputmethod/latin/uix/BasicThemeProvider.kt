@@ -144,6 +144,7 @@ class FlickClipDrawable(
         background.colorFilter = cf
     }
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 

@@ -71,12 +71,12 @@ final def translationsWithoutEngValues = { final String path ->
 }
 
 android {
-    namespace 'org.futo.voiceinput.shared'
-    compileSdk 35
+    namespace = 'org.futo.voiceinput.shared'
+    compileSdk = 35
 
     defaultConfig {
-        minSdk 24
-        targetSdk 35
+        minSdk = 24
+        targetSdk = 35
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
@@ -104,9 +104,9 @@ android {
         jvmTarget = '1.8'
     }
     buildFeatures {
-        compose true
-        viewBinding true
-        mlModelBinding true
+        compose = true
+        viewBinding = true
+        mlModelBinding = true
     }
 }
 

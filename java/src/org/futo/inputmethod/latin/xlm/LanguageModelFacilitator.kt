@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package org.futo.inputmethod.latin.xlm;
 
 import android.content.Context

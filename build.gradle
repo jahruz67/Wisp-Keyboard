@@ -182,9 +182,9 @@ tasks.register('updateContributors') {
 preBuild.dependsOn updateLocales
 
 android {
-    namespace 'org.futo.inputmethod.latin'
+    namespace = 'org.futo.inputmethod.latin'
 
-    compileSdk 35
+    compileSdk = 35
 
     // Required if using classes in android.test.runner
     useLibrary 'android.test.runner'
@@ -196,8 +196,8 @@ android {
     useLibrary 'android.test.mock'
 
     defaultConfig {
-        minSdk 24
-        targetSdk 35
+        minSdk = 24
+        targetSdk = 35
         versionName getVersionName()
         versionCode getVersionCode()
 
@@ -247,14 +247,14 @@ android {
     buildTypes {
         debug {
             minifyEnabled false
-            shrinkResources false
-            signingConfig signingConfigs.debug
+            shrinkResources = false
+            signingConfig = signingConfigs.debug
         }
         release {
             minifyEnabled true
-            shrinkResources false
+            shrinkResources = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig releaseSigning
+            signingConfig = releaseSigning
         }
 
         buildTypes.each {
@@ -363,7 +363,7 @@ android {
     }
 
     lintOptions {
-        checkReleaseBuilds false
+        checkReleaseBuilds = false
     }
 
     aaptOptions {
@@ -372,11 +372,11 @@ android {
 
     packagingOptions {
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging = true
         }
     }
 
-    ndkVersion '28.2.13676358'
+    ndkVersion = '28.2.13676358'
     externalNativeBuild {
         cmake {
             path 'native/jni/CMakeLists.txt'
@@ -387,10 +387,10 @@ android {
         jvmTarget = '1.8'
     }
     buildFeatures {
-        compose true
-        viewBinding true
-        mlModelBinding true
-        buildConfig true
+        compose = true
+        viewBinding = true
+        mlModelBinding = true
+        buildConfig = true
     }
 
     packagingOptions {

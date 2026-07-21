@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -98,7 +98,7 @@ val KeyboardModeAction = Action(
                             IconButton(onClick = {
                                 manager.closeActionWindow()
                             }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.action_keyboard_modes_go_back))
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_keyboard_modes_go_back))
                             }
                         }
                         Spacer(Modifier.weight(1.0f))

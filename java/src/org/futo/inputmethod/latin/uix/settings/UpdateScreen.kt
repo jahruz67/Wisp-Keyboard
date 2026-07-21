@@ -28,7 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
@@ -242,7 +242,7 @@ fun UpdateDialog(navController: NavHostController) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    GlobalScope.launch { downloadAndInstall(scope.lifecycleScope, context, lastUpdateResult) {
+                    scope.lifecycleScope.launch { downloadAndInstall(scope.lifecycleScope, context, lastUpdateResult) {
                         statusText.value = it
 
                         if(!it.endsWith("%")) {

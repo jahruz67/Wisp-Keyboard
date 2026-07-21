@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package org.futo.inputmethod.latin.uix.settings.pages.modelmanager
 
 import android.app.Activity
@@ -11,6 +13,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -120,7 +123,7 @@ fun ModelPicker(
                     focusedIndicatorColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     focusedTrailingIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
-                modifier = Modifier.menuAnchor()
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable)
             )
             ExposedDropdownMenu(
                 expanded = expanded,

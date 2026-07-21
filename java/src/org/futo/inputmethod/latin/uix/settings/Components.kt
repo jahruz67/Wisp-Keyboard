@@ -38,9 +38,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -122,7 +122,7 @@ fun ScreenTitle(title: String, showBack: Boolean = false, navController: NavHost
         Spacer(modifier = Modifier.width(16.dp))
 
         if(showBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.align(CenterVertically))
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.align(CenterVertically))
             Spacer(modifier = Modifier.width(18.dp))
         }
         Text(title, style = Typography.Heading.Medium, modifier = Modifier
@@ -714,8 +714,8 @@ fun NavigationItem(title: String, style: NavigationItemStyle, navigate: () -> Un
         }
     ) {
         when(style) {
-            NavigationItemStyle.Misc -> Icon(Icons.Default.ArrowForward, contentDescription = null)
-            NavigationItemStyle.Mail -> Icon(Icons.Default.Send, contentDescription = null)
+            NavigationItemStyle.Misc -> Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+            NavigationItemStyle.Mail -> Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
             NavigationItemStyle.ExternalLink -> Icon(painterResource(R.drawable.external_link), contentDescription = null)
             else -> {}
         }

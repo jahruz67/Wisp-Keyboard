@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
@@ -18,6 +19,8 @@ class InstallReceiver : BroadcastReceiver() {
         val onReceiveResult = MutableSharedFlow<String>(0)
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
+    @Suppress("DEPRECATION")
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)
         Log.i(TAG, "Received status $status.")

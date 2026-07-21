@@ -215,6 +215,7 @@ fun InlineSuggestionView(inlineSuggestion: MutableState<View?>, leftBound: Int, 
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+@Suppress("DEPRECATION")
 @RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun RowScope.InlineSuggestions(suggestions: List<MutableState<View?>>) {

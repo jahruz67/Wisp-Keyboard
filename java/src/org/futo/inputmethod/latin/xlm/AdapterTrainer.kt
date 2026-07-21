@@ -1,12 +1,13 @@
 package org.futo.inputmethod.latin.xlm
 
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.annotations.ExternallyReferenced
 
-@OptIn(DelicateCoroutinesApi::class)
+@OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
 val TrainingContext = newSingleThreadContext("AdapterTrainingContext")
 
 class InadequateDataException() : Exception("Inadequate Training Data")

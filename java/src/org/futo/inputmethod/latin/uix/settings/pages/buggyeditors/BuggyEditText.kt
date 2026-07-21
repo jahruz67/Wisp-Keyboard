@@ -73,6 +73,7 @@ class BuggyEditText @JvmOverloads constructor(
         imm.hideSoftInputFromWindow(windowToken, 0)
     }
 
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     internal fun notifyImeSelection() {
         var ss = selectionStart
         var se = selectionEnd
