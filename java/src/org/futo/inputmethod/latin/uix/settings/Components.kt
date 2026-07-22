@@ -1022,6 +1022,47 @@ fun PrimarySettingToggleDataStoreItem(
     }
 }
 
+@Composable
+fun SubScreenTitle(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+    )
+}
+
+@Composable
+fun SettingRadioGroup(
+    items: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit
+) {
+    Column {
+        items.forEachIndexed { index, item ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = index == selectedIndex,
+                    onClick = { onSelect(index) }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = item,
+                    style = Typography.Body.Regular,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
 @Preview
 @Composable
 fun PreviewPrimarySetting() {

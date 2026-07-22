@@ -703,6 +703,21 @@ Default is %1$s</string>
     <string name="personal_dictionary_words_list_header">Words</string>
     <string name="personal_dictionary_cancel_action">Cancel</string>
     <string name="personal_dictionary_delete_additional_file">Delete extra dictionary file?</string>
-    <!-- %1$s will be replaced with the custom dictionary name -->
-    <string name="personal_dictionary_delete_additional_file_text">%1$s will be deleted</string>
+    <string name="personal_dictionary_delete_additional_file_text">Are you sure you want to delete the additional dictionary file for %s?</string>
+    <!-- Add-ons & Translation strings -->
+    <string name="addons_settings_title">Add-ons</string>
+    <string name="addons_settings_subtitle">Manage extensions and extra tools</string>
+    <string name="translate_addon_title">Translate</string>
+    <string name="translate_addon_subtitle">Translate text in real-time between languages</string>
+    <string name="translate_setting_enable">Enable Translate Add-on</string>
+    <string name="translate_setting_provider">Translation Provider</string>
+    <string name="translate_setting_api_key">API Key</string>
+    <string name="translate_setting_api_key_subtitle">Enter your API key for the chosen provider</string>
+    <string name="translate_setting_custom_url">Custom Endpoint URL</string>
+    <string name="translate_setting_custom_url_subtitle">Endpoint URL for custom server (e.g., LibreTranslate)</string>
+    <string name="translate_setting_default_source">Default Source Language</string>
+    <string name="translate_setting_default_target">Default Target Language</string>
+    <string name="translate_setting_live_translate">Live Translation</string>
+    <string name="translate_setting_live_translate_subtitle">Translate dynamically as you type</string>
+    <string name="action_translate_title">Translate</string>
 </resources>

@@ -104,6 +104,8 @@ val SettingsMenus = listOf(
     PredictiveTextMenu,
     BlacklistScreenLite,
     VoiceInputMenu,
+    org.futo.inputmethod.latin.uix.settings.pages.AddonsMenu,
+    org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu,
     ActionsScreen,
     HelpMenu,
     MiscMenu,

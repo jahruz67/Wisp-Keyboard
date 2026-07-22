@@ -112,6 +112,14 @@ val HomeScreenLite = UserSettingsMenu(
             icon = R.drawable.themes
         ),
 
+        userSettingNavigationItem(
+            title = R.string.addons_settings_title,
+            subtitle = R.string.addons_settings_subtitle,
+            style = NavigationItemStyle.HomeSecondary,
+            navigateTo = "addons",
+            icon = R.drawable.ic_translate
+        ),
+
         //if(!isPaid) {
         userSettingNavigationItem(
             title = R.string.payment_screen_short_title,

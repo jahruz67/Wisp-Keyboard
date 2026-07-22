@@ -43,6 +43,7 @@ val AllActionsMap = mapOf(
     "left" to ArrowLeftAction,
     "right" to ArrowRightAction,
     "font_typer" to FontTyperAction,
+    "translate" to org.futo.inputmethod.latin.uix.actions.translate.TranslateAction,
 )
 
 val ActionToId = AllActionsMap.entries.associate { it.value to it.key }
