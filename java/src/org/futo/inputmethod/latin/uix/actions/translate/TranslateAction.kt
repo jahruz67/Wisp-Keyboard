@@ -210,8 +210,10 @@ fun TranslateContents(
         }
     }
 
-    LaunchedEffect(translatedText, errorMessage) {
-        onSupplementalContentChanged(translatedText.isNotBlank() || errorMessage != null)
+    LaunchedEffect(voiceMode, translatedText, errorMessage) {
+        onSupplementalContentChanged(
+            voiceMode || translatedText.isNotBlank() || errorMessage != null
+        )
     }
 
     if (voiceMode) {

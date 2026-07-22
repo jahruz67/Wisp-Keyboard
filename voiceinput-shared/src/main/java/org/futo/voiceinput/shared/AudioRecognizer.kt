@@ -31,7 +31,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.futo.voiceinput.shared.ggml.InferenceCancelledException
-import org.futo.voiceinput.shared.ggml.InvalidModelException
 import org.futo.voiceinput.shared.types.AudioRecognizerListener
 import org.futo.voiceinput.shared.types.InferenceState
 import org.futo.voiceinput.shared.types.Language
@@ -575,7 +574,9 @@ class AudioRecognizer(
             withContext(Dispatchers.Default) {
                 try {
                     preloadModels()
-                } catch(_: InvalidModelException) {
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Log.e("AudioRecognizer", "Failed to preload voice input model", e)
                     withContext(Dispatchers.Main) {
                         reset()
                         listener.modelLoadingFailed()

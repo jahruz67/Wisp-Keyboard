@@ -211,17 +211,19 @@ private class VoiceInputActionWindow(
                 modelManager = state.modelManager
             )
         } catch(e: ModelDoesNotExistException) {
-            modelException.value = e
+            withContext(Dispatchers.Main) {
+                modelException.value = e
+            }
             return@launch
         }
 
-        this@VoiceInputActionWindow.recognizerView.value = recognizerView
-
-        //yield()
-        recognizerView.reset()
-
-        //yield()
-        recognizerView.start()
+        // This window can be created from inside another composition (Translate). Publish and
+        // start on Main so that Compose reliably observes the new recognizer state.
+        withContext(Dispatchers.Main) {
+            this@VoiceInputActionWindow.recognizerView.value = recognizerView
+            recognizerView.reset()
+            recognizerView.start()
+        }
     }
 
     private var inputTransaction = if (resultHandler == null) manager.createInputTransaction() else null
@@ -250,10 +252,18 @@ private class VoiceInputActionWindow(
             .semantics(mergeDescendants = true) {
                 traversalIndex = -1.0f
             }) {
-            Box(modifier = Modifier.align(Alignment.Center)) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 when {
                     modelException.value != null -> ModelDownloader(modelException.value!!)
                     recognizerView.value != null -> recognizerView.value!!.Content()
+                    else -> Column {
+                        RecognizeLoadingCircle(
+                            text = stringResource(org.futo.voiceinput.shared.R.string.initializing)
+                        )
+                    }
                 }
             }
         }
@@ -261,7 +271,7 @@ private class VoiceInputActionWindow(
 
     override fun close(): CloseResult {
         inputTransaction?.cancel()
-        runBlocking { initJob.cancelAndJoin() }
+        initJob.cancel()
         recognizerView.value?.cancel()
         state.modelManager.cancelAll()
         return CloseResult.Default
@@ -390,7 +400,7 @@ private class GroqVoiceInputActionWindow(
     private var shouldPlaySounds = context.getSetting(ENABLE_SOUND)
 
     private var recordingJob: kotlinx.coroutines.Job? = null
-    private val audioBuffer = mutableListOf<Float>()
+    private var audioBuffer = FloatArray(0)
     private var hasStarted = false
     private var stopRequested = false
     private var wasMediaPlaying = false
@@ -420,7 +430,10 @@ private class GroqVoiceInputActionWindow(
             .semantics(mergeDescendants = true) {
                 traversalIndex = -1.0f
             }) {
-            Box(modifier = Modifier.align(Alignment.Center)) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 when (currentViewState) {
                     CurrentView.LoadingCircle -> {
                         Column {
@@ -487,7 +500,7 @@ private class GroqVoiceInputActionWindow(
 
         statusText = null
         errorText = null
-        audioBuffer.clear()
+        audioBuffer = FloatArray(0)
         stopRequested = false
 
         // Pause media only if it's actively playing — track whether we paused it
@@ -531,65 +544,82 @@ private class GroqVoiceInputActionWindow(
             bufferSize.coerceAtLeast(4096)
         )
 
-        if (recorder.state != android.media.AudioRecord.STATE_INITIALIZED) {
-            withContext(Dispatchers.Main) {
-                currentViewState = CurrentView.Error
-                errorText = "Failed to initialize audio recorder"
-            }
-            return
-        }
-
-        withContext(Dispatchers.Main) {
-            if (shouldPlaySounds) {
-                soundPlayer.playStartSound()
-            }
-            magnitudeState.floatValue = 0.0f
-            statusState.value = MagnitudeState.NOT_TALKED_YET
-            currentViewState = CurrentView.InnerRecognize
-        }
-
-        recorder.startRecording()
-
-        val shortBuffer = ShortArray(1600)
-        var totalSamples = 0
-        val maxSamples = sampleRate * 120 // 2 minutes max
-        var hasTalked = false
-
-        while (totalSamples < maxSamples && !stopRequested) {
-            yield()
-            val nRead = recorder.read(shortBuffer, 0, 1600, android.media.AudioRecord.READ_NON_BLOCKING)
-            if (nRead <= 0) {
-                kotlinx.coroutines.delay(50)
-                continue
-            }
-
-            var sumSq = 0.0
-            for (i in 0 until nRead) {
-                val floatSample = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
-                audioBuffer.add(floatSample)
-                sumSq += floatSample * floatSample
-            }
-            totalSamples += nRead
-
-            val rms = sqrt(sumSq / nRead).toFloat()
-            if (rms > 0.01f) {
-                hasTalked = true
-            }
-            val magnitude = (1.0f - 0.1f.toDouble().pow(24.0 * rms)).toFloat()
-            val state = if (hasTalked) {
-                MagnitudeState.TALKING
-            } else {
-                MagnitudeState.NOT_TALKED_YET
+        try {
+            if (recorder.state != android.media.AudioRecord.STATE_INITIALIZED) {
+                withContext(Dispatchers.Main) {
+                    currentViewState = CurrentView.Error
+                    errorText = "Failed to initialize audio recorder"
+                }
+                return
             }
 
             withContext(Dispatchers.Main) {
-                magnitudeState.floatValue = magnitude
-                statusState.value = state
+                if (shouldPlaySounds) {
+                    soundPlayer.playStartSound()
+                }
+                magnitudeState.floatValue = 0.0f
+                statusState.value = MagnitudeState.NOT_TALKED_YET
+                currentViewState = CurrentView.InnerRecognize
             }
-        }
 
-        recorder.stop()
-        recorder.release()
+            recorder.startRecording()
+
+            val shortBuffer = ShortArray(1600)
+            var totalSamples = 0
+            val maxSamples = sampleRate * 120 // 2 minutes max
+            val recordedSamples = FloatArray(maxSamples)
+            var hasTalked = false
+
+            while (totalSamples < maxSamples && !stopRequested) {
+                yield()
+                val samplesToRead = minOf(shortBuffer.size, maxSamples - totalSamples)
+                val nRead = recorder.read(
+                    shortBuffer,
+                    0,
+                    samplesToRead,
+                    android.media.AudioRecord.READ_NON_BLOCKING
+                )
+                if (nRead <= 0) {
+                    kotlinx.coroutines.delay(50)
+                    continue
+                }
+
+                var sumSq = 0.0
+                for (i in 0 until nRead) {
+                    val floatSample = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
+                    recordedSamples[totalSamples + i] = floatSample
+                    sumSq += floatSample * floatSample
+                }
+                totalSamples += nRead
+
+                val rms = sqrt(sumSq / nRead).toFloat()
+                if (rms > 0.01f) {
+                    hasTalked = true
+                }
+                val magnitude = (1.0f - 0.1f.toDouble().pow(24.0 * rms)).toFloat()
+                val state = if (hasTalked) {
+                    MagnitudeState.TALKING
+                } else {
+                    MagnitudeState.NOT_TALKED_YET
+                }
+
+                withContext(Dispatchers.Main) {
+                    magnitudeState.floatValue = magnitude
+                    statusState.value = state
+                }
+            }
+
+            audioBuffer = recordedSamples.copyOf(totalSamples)
+        } finally {
+            try {
+                if (recorder.recordingState == android.media.AudioRecord.RECORDSTATE_RECORDING) {
+                    recorder.stop()
+                }
+            } catch (_: IllegalStateException) {
+                // The audio service may already have stopped the recorder.
+            }
+            recorder.release()
+        }
     }
 
     private fun resumeMediaIfWePaused() {
@@ -615,8 +645,6 @@ private class GroqVoiceInputActionWindow(
                 val whisperLanguage = context.getSetting(GROQ_WHISPER_LANGUAGE)
                 val aiModel = context.getSetting(GROQ_AI_MODEL)
 
-                val floatArray = audioBuffer.toFloatArray()
-
                 withContext(Dispatchers.Main) {
                     currentViewState = CurrentView.LoadingCircle
                     statusText = context.getString(org.futo.voiceinput.shared.R.string.decoding)
@@ -624,7 +652,7 @@ private class GroqVoiceInputActionWindow(
 
                 val transcriptionResult = GroqRecognizer.transcribe(
                     apiKey = apiKey,
-                    audioData = floatArray,
+                    audioData = audioBuffer,
                     sampleRate = 16000,
                     model = whisperModel,
                     language = if (whisperLanguage == "auto") null else whisperLanguage
