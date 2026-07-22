@@ -319,6 +319,8 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
     }
 
     var decoder: SwipeDecoder? = null
+    @Volatile
+    private var decoderUnavailable = false
 
     object BeamValues {
         const val shortBeam = 32
@@ -327,6 +329,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         const val highestBeam = 300
     }
 
+    @Synchronized
     private fun getOrInitDecoder(): SwipeDecoder = decoder ?: run {
         val swipeModelPath = getFilePath(context, SWIPE_MODEL)
 
@@ -340,6 +343,21 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         applyPendingLayoutInfo()
 
         return decoder
+    }
+
+    @Synchronized
+    private fun disableDecoder(cause: Throwable) {
+        Log.e(
+            "SwipeDecoderDictionary",
+            "FUTO Swipe failed; falling back to the legacy swipe decoder for this session.",
+            cause
+        )
+        decoderUnavailable = true
+        synchronized(BinaryDictionary.sTrieUsageLock) {
+            runCatching { decoder?.close() }
+            decoder = null
+            appliedTries = null
+        }
     }
 
     override fun getNextValidCodePoints(composedData: ComposedData?): ArrayList<Int> {
@@ -390,6 +408,47 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         useHighBeam: Boolean,
         trieWeights: FloatArray
     ): ArrayList<SuggestedWords.SuggestedWordInfo>? {
+        if(decoderUnavailable) return null
+
+        return try {
+            getSuggestionsWithDecoder(composedData, ngramContext, useHighBeam, trieWeights)
+        } catch(e: LinkageError) {
+            disableDecoder(e)
+            null
+        } catch(e: RuntimeException) {
+            disableDecoder(e)
+            null
+        }
+    }
+
+    private data class GestureSegmentSnapshot(
+        val pointerId: Int,
+        val x: IntArray,
+        val y: IntArray,
+        val t: IntArray,
+    )
+
+    private fun snapshotSegment(segment: InputPointers.GestureSegment): GestureSegmentSnapshot? {
+        // InputPointers is updated on the UI thread while suggestions can be generated on a
+        // worker thread. Snapshot only the points present in all three arrays so JNI never sees
+        // mismatched coordinate and timestamp lengths.
+        val pointCount = minOf(segment.x.length, segment.y.length, segment.t.length)
+        if(pointCount == 0) return null
+
+        return GestureSegmentSnapshot(
+            pointerId = segment.pointerId,
+            x = segment.x.primitiveArray.copyOf(pointCount),
+            y = segment.y.primitiveArray.copyOf(pointCount),
+            t = segment.t.primitiveArray.copyOf(pointCount),
+        )
+    }
+
+    private fun getSuggestionsWithDecoder(
+        composedData: ComposedData,
+        ngramContext: NgramContext?,
+        useHighBeam: Boolean,
+        trieWeights: FloatArray
+    ): ArrayList<SuggestedWords.SuggestedWordInfo>? {
         if(context.getSetting(LegacySwipeSetting) == true) return null
 
         if(!composedData.mIsBatchMode && composedData.mInputPointers.pointerSize == 0 && composedData.mTypedWord.isEmpty()) {
@@ -402,7 +461,7 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         if(!composedData.mIsBatchMode) return null
 
         val pointers = composedData.mInputPointers
-        val segments = pointers.gestureSegments.toList().filter { it.x.length > 0 }
+        val segments = pointers.gestureSegments.toList().mapNotNull(::snapshotSegment)
 
         val count = segments.size
         //Log.d("BatchInputSwipeDecoderDictionary", "total count is $count out of ${pointers.gestureSegments.size}")
@@ -415,26 +474,31 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
         val keyboardWidth = kb.mBaseWidth
         val keyboardHeight = kb.mBaseHeight - kb.mPadding.bottom
+        if(keyboardWidth <= 0 || keyboardHeight <= 0) {
+            Log.e("SwipeDecoderDictionary", "Invalid keyboard size: ${keyboardWidth}x${keyboardHeight}")
+            return null
+        }
 
-        val earliestTime = segments[0].t.get(0).toFloat()
-        val transformSegment = { seg: InputPointers.GestureSegment -> SwipeDecoder.SwipeSeg(
-            x = seg.x.primitiveArray.take(seg.x.length).map {
+        val earliestTime = segments[0].t[0].toFloat()
+        val transformSegment = { seg: GestureSegmentSnapshot -> SwipeDecoder.SwipeSeg(
+            x = seg.x.map {
                 it.toFloat() / keyboardWidth * appliedLayoutInfo.sx + appliedLayoutInfo.ox
             }.toFloatArray(),
-            y = seg.y.primitiveArray.take(seg.y.length).map {
+            y = seg.y.map {
                 minOf(1.0f, (it.toFloat() / keyboardHeight) * (4.0f / 3.0f) * appliedLayoutInfo.sy + appliedLayoutInfo.oy )
             }.toFloatArray(),
-            t = seg.t.primitiveArray.take(seg.t.length).map { it - earliestTime }.toFloatArray()
+            t = seg.t.map { it - earliestTime }.toFloatArray()
         ) }
 
         val left = mutableListOf<SwipeDecoder.SwipeSeg>()
         val right = mutableListOf<SwipeDecoder.SwipeSeg>()
 
-        if(count == 1) {
-            left.add(transformSegment(segments.first()))
-        } else {
-            left.addAll(segments.filter { it.pointerId == 0 }.map { transformSegment(it) })
-            right.addAll(segments.filter { it.pointerId == 1 }.map { transformSegment(it) })
+        // Android pointer IDs are arbitrary and are not guaranteed to be 0 and 1. Preserve the
+        // first two pointers as the decoder's left/right tracks and ignore unsupported extras.
+        val pointerIds = segments.map { it.pointerId }.distinct()
+        left.addAll(segments.filter { it.pointerId == pointerIds[0] }.map(transformSegment))
+        pointerIds.getOrNull(1)?.let { rightPointerId ->
+            right.addAll(segments.filter { it.pointerId == rightPointerId }.map(transformSegment))
         }
 
         val wordsContext = ngramContext?.fullContext
@@ -460,8 +524,12 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
         val topK = if(useHighBeam) 4 else 1
 
         val results = synchronized(BinaryDictionary.sTrieUsageLock) {
-            if(appliedTries?.isEmpty() != false) {
-                Log.e("SwipeDecoderDictionary", "Applied tries are blank! $appliedTries")
+            val tries = appliedTries
+            if(tries?.isEmpty() != false || tries.size != trieWeights.size) {
+                Log.e(
+                    "SwipeDecoderDictionary",
+                    "Swipe trie state is invalid: tries=${tries?.size}, weights=${trieWeights.size}"
+                )
                 return null
             }
             decoder.recognize(
@@ -522,30 +590,40 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
 
     data class PendingLayoutInfo(val layout: LayoutInfoForModel, val tries: List<Long>)
     private var pendingLayoutInfo: PendingLayoutInfo? = null
+    @Synchronized
     private fun applyPendingLayoutInfo() {
         decoder?.let { d ->
             pendingLayoutInfo?.let { pend ->
                 //Log.d("SwipeDecoderDictionary", "Applying layout info: $pend")
-                d.setMode(
-                    letters=pend.layout.letters,
-                    cx=pend.layout.xs.toFloatArray(),
-                    cy=pend.layout.ys.toFloatArray(),
-                    tries=pend.tries.toLongArray(),
-                    decoderPath=getFilePath(context, pend.layout.decoder),
-                    lmModelPath=getFilePath(context, pend.layout.lm),
-                    lmVocabPath=getFilePath(context, vocabFor(pend.layout.lm))
-                )
-                appliedScoring.value = d.scoring
-                appliedLayoutInfo = pend.layout
-                appliedTries = pend.tries.toLongArray()
+                synchronized(BinaryDictionary.sTrieUsageLock) {
+                    d.setMode(
+                        letters=pend.layout.letters,
+                        cx=pend.layout.xs.toFloatArray(),
+                        cy=pend.layout.ys.toFloatArray(),
+                        tries=pend.tries.toLongArray(),
+                        decoderPath=getFilePath(context, pend.layout.decoder),
+                        lmModelPath=getFilePath(context, pend.layout.lm),
+                        lmVocabPath=getFilePath(context, vocabFor(pend.layout.lm))
+                    )
+                    appliedScoring.value = d.scoring
+                    appliedLayoutInfo = pend.layout
+                    appliedTries = pend.tries.toLongArray()
+                }
             }
             pendingLayoutInfo = null
         }
     }
 
     fun updateKeyboard(pendingLayoutInfo: PendingLayoutInfo) {
+        if(decoderUnavailable) return
         this.pendingLayoutInfo = pendingLayoutInfo
-        applyPendingLayoutInfo()
+        try {
+            applyPendingLayoutInfo()
+        } catch(e: LinkageError) {
+            disableDecoder(e)
+        } catch(e: RuntimeException) {
+            disableDecoder(e)
+        }
     }
 
     override fun isInDictionary(word: String?): Boolean {
@@ -553,8 +631,17 @@ class SwipeDecoderDictionary(val context: Context, val locale: Locale) : Diction
     }
 
     fun invalidateTries() {
-        if(appliedTries?.isEmpty() != false) return
-        decoder?.setMode(tries = emptyList<Long>().toLongArray())
-        appliedTries = null
+        if(decoderUnavailable) return
+        try {
+            synchronized(BinaryDictionary.sTrieUsageLock) {
+                if(appliedTries?.isEmpty() != false) return
+                decoder?.setMode(tries = longArrayOf())
+                appliedTries = null
+            }
+        } catch(e: LinkageError) {
+            disableDecoder(e)
+        } catch(e: RuntimeException) {
+            disableDecoder(e)
+        }
     }
 }
