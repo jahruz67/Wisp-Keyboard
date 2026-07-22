@@ -582,9 +582,9 @@
 
     <!-- Voice input settings menu -->
     <string name="voice_input_settings_title">Voice Input</string>
-    <string name="voice_input_settings_offline_mode">Semi-Offline Mode</string>
+    <string name="voice_input_settings_offline_mode">Offline Mode</string>
     <string name="voice_input_settings_offline_mode_subtitle">Use local voice input models instead of Groq cloud API</string>
-    <string name="voice_input_settings_offline_notice">Semi-Offline Mode — using local models</string>
+    <string name="voice_input_settings_offline_notice">Offline Mode — using local models</string>
     <string name="voice_input_settings_groq_api_key">Groq API Key</string>
     <string name="voice_input_settings_groq_api_key_subtitle">Enter your Groq API key for cloud transcription</string>
     <string name="voice_input_settings_whisper_model">Whisper Model</string>

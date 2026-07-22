@@ -35,9 +35,9 @@ index eaff24078..d22331ba9 100644
 -    <string name="voice_input_settings_builtin_disabled_notice">Built-in voice input is disabled!</string>
 -    <string name="voice_input_settings_disable_builtin_voice_input">Disable built-in voice input</string>
 -    <string name="voice_input_settings_disable_builtin_voice_input_subtitle">Use voice input provided by external app</string>
-+    <string name="voice_input_settings_offline_mode">Semi-Offline Mode</string>
++    <string name="voice_input_settings_offline_mode">Offline Mode</string>
 +    <string name="voice_input_settings_offline_mode_subtitle">Use local voice input models instead of Groq cloud API</string>
-+    <string name="voice_input_settings_offline_notice">Semi-Offline Mode — using local models</string>
++    <string name="voice_input_settings_offline_notice">Offline Mode — using local models</string>
 +    <string name="voice_input_settings_groq_api_key">Groq API Key</string>
 +    <string name="voice_input_settings_groq_api_key_subtitle">Enter your Groq API key for cloud transcription</string>
 +    <string name="voice_input_settings_whisper_model">Whisper Model</string>
