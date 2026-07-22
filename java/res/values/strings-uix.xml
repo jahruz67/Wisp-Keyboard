@@ -85,6 +85,7 @@
     <!-- Must be fairly short -->
     <string name="action_clipboard_manager_delete_corrupted_clipboard_button">Delete</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_title">Clipboard History Inactive</string>
+    <string name="action_clipboard_manager_error_clipboard_history_disabled_text">Clipboard history is not enabled. To save clipboard items, you can enable clipboard history. This will keep 25 items for 3 days unless pinned. Passwords and other sensitive items are excluded from history.</string>
     <string name="action_clipboard_manager_error_clipboard_history_disabled_text_v2">To save clipboard items, you can enable clipboard history. This will keep up to <xliff:g id="numItems" example="25">%1$s</xliff:g> items for <xliff:g id="numDays" example="3">%2$s</xliff:g> days (pinned items are exempt). You can configure this in settings.</string>
     <string name="action_clipboard_manager_enable_clipboard_history_button">Enable Clipboard History</string>
     <!-- This message is shown when we're typing in a text field does not support image insertion ("app" refers to the external app that is providing the text field) -->
@@ -365,7 +366,7 @@
     <string name="resource_importer_importing_cfg">Importing configuration… Please do not close this menu until the process is completed (5 to 10 seconds)</string>
     <string name="resource_importer_select_language">Select the language to import for:</string>
     <string name="resource_importer_warning_language_missing">This file appears to be intended for a language (%1$s) which is not enabled in settings</string>
-    <string name="resource_importer_warning_cfg_backup_is_destructive2">Are you sure you want to import this configuration backup? This will replace all of your settings, personal dictionary (system-wide), learned dictionary words, any imported resources, and more. If you’re unsure, make another backup before this.</string>
+    <string name="resource_importer_warning_cfg_backup_is_destructive2">Are you sure you want to import this configuration backup? This will replace all of your settings, personal dictionary (system-wide), learned dictionary words, any imported resources, and more. If you\'re unsure, make another backup before this.</string>
     <string name="resource_importer_warning_cfg_backup_newer_version">This configuration backup was created by a newer version of FUTO Keyboard, and it might not import properly. Try updating FUTO Keyboard first.</string>
 
     <string name="settings_export_configuration_title">Settings Backup</string>
@@ -390,14 +391,15 @@
     <string name="action_settings_title">Actions</string>
     <string name="action_settings_quick_options_title">Quick Options</string>
     <string name="action_settings_quick_option_enable_action_key">Enable action key</string>
-    <string name="action_settings_quick_option_enable_action_key_subtitle_no_assignment">Show a key to the left of spacebar to quickly access an action. Enabling this will place an emoji key, but it can be customized in “Edit Actions“</string>
+    <string name="action_settings_quick_option_enable_action_key_subtitle_no_assignment">Show a key to the left of spacebar to quickly access an action. Enabling this will place an emoji key, but it can be customized in "Edit Actions"</string>
     <string name="action_settings_quick_option_enable_action_key_subtitle_with_assignment">Show a key to the left of spacebar to quickly access an action. Disabling this will move the currently assigned action: %s</string>
     <string name="action_settings_quick_option_language_switch_key">Language switch key</string>
-    <string name="action_settings_quick_option_language_switch_key_subtitle">Replace the emoji key with a language switch key. Go to “Edit Actions” to put something else.</string>
+    <string name="action_settings_quick_option_language_switch_key_subtitle">Replace the emoji key with a language switch key. Go to "Edit Actions" to put something else.</string>
     <string name="action_settings_action_settings">Action Settings</string>
 
     <!-- Keyboard's size settings -->
     <string name="size_settings_title">Resize Keyboard</string>
+    <string name="size_settings_subtitle">Change keyboard size, make it one-handed, floating, split</string>
     <string name="size_settings_subtitle2">Change keyboard size, make it one-handed, floating, split</string>
     <string name="size_settings_resize_tip">Tap the \"Resize Keyboard\" button to resize.</string>
     <string name="size_settings_keyboard_modes_tip">You can access this anywhere with the Keyboard Modes action:</string>
@@ -425,14 +427,22 @@
     <string name="morekey_settings_show_hints_tags">additional characters, alt keys, symbols, popup keys</string>
     <string name="morekey_settings_duration">Long Press Duration</string>
     <string name="morekey_settings_duration_subtitle">How long a key needs to be pressed to be considered a long-press</string>
+    <string name="morekey_settings_enable">Enable Long-Press Keys</string>
 
     <string name="morekey_settings_backspace_title">Backspace</string>
+    <string name="morekey_settings_backspace_behavior">Backspace Behavior</string>
+    <string name="morekey_settings_backspace_behavior_delete_chars">Delete Characters</string>
+    <string name="morekey_settings_backspace_behavior_delete_words">Delete Words</string>
     <string name="morekey_settings_backspace_hold_delete_words">Hold to delete words</string>
     <string name="morekey_settings_backspace_swipe_to_delete">Swipe to delete</string>
     <string name="morekey_settings_backspace_swipe_to_delete_off">Off</string>
     <string name="morekey_settings_backspace_swipe_to_delete_characters">Characters</string>
     <string name="morekey_settings_backspace_swipe_to_delete_words">Words</string>
     <string name="morekey_settings_spacebar_title">Spacebar</string>
+    <string name="morekey_settings_space_behavior">Space Bar Behavior</string>
+    <string name="morekey_settings_space_behavior_only_cursor">Only Move Cursor</string>
+    <string name="morekey_settings_space_behavior_swipe_cursor">Swipe to Move Cursor</string>
+    <string name="morekey_settings_space_behavior_swipe_lang">Swipe to Switch Language</string>
     <string name="morekey_settings_spacebar_swipe_shortcut">Swipe</string>
     <string name="morekey_settings_spacebar_swipe_shortcut_off">Off</string>
     <string name="morekey_settings_spacebar_swipe_shortcut_cursor">Move cursor</string>
@@ -468,11 +478,16 @@
     <string name="typing_settings_enable_clipboard_history_tags">copy, paste</string>
     <string name="typing_settings_delete_pasted_text_on_backspace">Delete pasted/inserted text on backspace</string>
     <string name="typing_settings_revert_correction_on_backspace">Undo autocorrect on backspace</string>
+    <string name="typing_settings_swipe">Swipe Typing</string>
+    <string name="typing_settings_swipe_subtitle">Configure swipe typing settings</string>
 
     <!-- Automatic space insertion -->
     <string name="typing_settings_auto_space_mode">Automatic spaces mode</string>
+    <string name="typing_settings_auto_space_mode_auto">Immediate space after suggestions &amp; punctuation</string>
     <string name="typing_settings_auto_space_mode_auto2">Immediate space after suggestions &amp; punctuation</string>
+    <string name="typing_settings_auto_space_mode_suggestions">Immediate space after suggestions</string>
     <string name="typing_settings_auto_space_mode_suggestions2">Immediate space after suggestions</string>
+    <string name="typing_settings_auto_space_mode_legacy">Delayed space after suggestions (legacy mode)</string>
     <string name="typing_settings_auto_space_mode_legacy2">Delayed space after suggestions (legacy mode)</string>
     <string name="typing_settings_auto_space_mode_none2">Disabled (not recommended)</string>
 
@@ -594,6 +609,9 @@
     <string name="voice_input_settings_animate_bubble_subtitle">Display a bubble that reacts to speech</string>
     <string name="voice_input_settings_change_models">Models</string>
     <string name="voice_input_settings_change_models_subtitle">To change the models, visit Languages &amp; Models menu</string>
+    <string name="voice_input_settings_builtin_disabled_notice">Built-in voice input is disabled!</string>
+    <string name="voice_input_settings_disable_builtin_voice_input">Disable built-in voice input</string>
+    <string name="voice_input_settings_disable_builtin_voice_input_subtitle">Use voice input provided by external app</string>
 
     <!-- Prediction menu -->
     <string name="prediction_settings_title">Text Prediction</string>
@@ -633,6 +651,7 @@
     <string name="help_menu_email">Email keyboard@futo.org</string>
     <string name="help_menu_email_subtitle">Private feedback, help, or don\'t use GitHub? Email us</string>
     <string name="help_menu_email_tags">gmail, support, contact, help, broken, bug, error, issue, problem, complaint, ticket, payment, support, glitch, malfunction, fix, customer service, crash, question, inquiry, assistance</string>
+    <string name="version_text">v%s</string>
 
     <!-- Setup configuration -->
     <string name="setup_step_1">Setup - Step 1</string>
@@ -645,6 +664,7 @@
     <string name="setup_switch_input_methods">Switch Input Methods</string>
 
     <!-- Credits menu -->
+    <string name="credits_title">Credits</string>
     <string name="credits_menu_title">Credits</string>
     <string name="credits_menu_header_text">Thanks to these people for helping make FUTO Keyboard a great app!</string>
     <string name="credits_menu_team_translators_title">Translators</string>

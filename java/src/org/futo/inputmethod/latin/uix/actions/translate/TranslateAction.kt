@@ -3,7 +3,6 @@ package org.futo.inputmethod.latin.uix.actions.translate
 import android.Manifest
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,12 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -51,15 +48,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 import org.futo.inputmethod.latin.R
@@ -78,6 +71,7 @@ import org.futo.inputmethod.latin.uix.settings.SettingsActivity
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
 import org.futo.voiceinput.shared.GroqRecognizer
 import org.futo.voiceinput.shared.types.MagnitudeState
+import org.futo.voiceinput.shared.ui.AnimatedRecognizeCircle
 import org.futo.voiceinput.shared.clearCommunicationDevice
 import org.futo.voiceinput.shared.pauseMediaIfPlaying
 import org.futo.voiceinput.shared.resumeMedia
@@ -119,7 +113,7 @@ fun TranslateHeader(
             )
         }
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.weight(1f))
 
         Box {
             Surface(
@@ -194,6 +188,8 @@ fun TranslateHeader(
                 }
             }
         }
+
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -290,12 +286,12 @@ fun TranslateContents(
             border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFD49A76)),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp)
+                .padding(horizontal = 12.dp, vertical = 0.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 12.dp, vertical = 0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (voiceMode) {
@@ -389,7 +385,6 @@ private fun VoiceInputBar(
     onVoiceCancel: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var apiKey = context.getSetting(GROQ_API_KEY)
 
     if (apiKey.isBlank()) {
@@ -432,11 +427,10 @@ private fun VoiceInputBar(
     var aiModel by remember { mutableStateOf(context.getSetting(org.futo.inputmethod.latin.uix.GROQ_AI_MODEL)) }
 
     var isRecording by remember { mutableStateOf(false) }
-    var magnitude by remember { mutableFloatStateOf(0.0f) }
+    val magnitudeState = remember { mutableFloatStateOf(0.0f) }
     var currentStatus by remember { mutableStateOf(MagnitudeState.NOT_TALKED_YET) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var wasMediaPlaying by remember { mutableStateOf(false) }
-    val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 
     LaunchedEffect(Unit) {
         wasMediaPlaying = pauseMediaIfPlaying(context)
@@ -472,7 +466,7 @@ private fun VoiceInputBar(
             }
 
             currentStatus = MagnitudeState.NOT_TALKED_YET
-            magnitude = 0.0f
+            magnitudeState.floatValue = 0.0f
             isRecording = true
             recorder.startRecording()
 
@@ -497,7 +491,7 @@ private fun VoiceInputBar(
 
                 val rms = sqrt(sumSq / nRead).toFloat()
                 if (rms > 0.01f) hasTalked = true
-                magnitude = (1.0f - 0.1f.pow(12.0f * rms)).coerceIn(0f, 1f)
+                magnitudeState.floatValue = (1.0f - 0.1f.pow(12.0f * rms)).coerceIn(0f, 1f)
                 currentStatus = if (hasTalked) MagnitudeState.TALKING else MagnitudeState.NOT_TALKED_YET
             }
 
@@ -546,85 +540,63 @@ private fun VoiceInputBar(
         }
     }
 
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(64.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier.size(72.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isRecording && magnitude > 0.001f && currentStatus != MagnitudeState.MIC_MAY_BE_BLOCKED) {
-                        Canvas(modifier = Modifier.fillMaxWidth()) {
-                            val boost = sqrt(magnitude.toDouble().coerceIn(0.0, 1.0)).toFloat()
-                            val d = size.minDimension
-                            val minR = 24.dp.toPx()
-                            val maxR = min(d / 2f, 34.dp.toPx())
-                            val r = minR + (maxR - minR) * boost
-                            drawCircle(
-                                color = primaryContainerColor.copy(alpha = 0.35f),
-                                radius = r,
-                                center = Offset(d / 2f, d / 2f)
-                            )
-                        }
-                    }
-                    Icon(
-                        painter = painterResource(R.drawable.mic_fill),
-                        contentDescription = stringResource(R.string.action_voice_input_title),
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                if (errorMessage != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    ) {
-                        Text(
-                            text = errorMessage!!,
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+            AnimatedRecognizeCircle(
+                magnitude = magnitudeState,
+                alpha = 0.55f
+            )
+            Icon(
+                painter = painterResource(R.drawable.mic_fill),
+                contentDescription = stringResource(R.string.action_voice_input_title),
+                modifier = Modifier.size(36.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+
+        Text(
+            text = when (currentStatus) {
+                MagnitudeState.NOT_TALKED_YET -> stringResource(org.futo.voiceinput.shared.R.string.try_saying_something)
+                MagnitudeState.TALKING -> stringResource(org.futo.voiceinput.shared.R.string.listening)
+                MagnitudeState.MIC_MAY_BE_BLOCKED -> stringResource(org.futo.voiceinput.shared.R.string.no_audio_detected_is_your_microphone_blocked)
+            },
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        if (errorMessage != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
                 Text(
-                    text = when (currentStatus) {
-                        MagnitudeState.NOT_TALKED_YET -> stringResource(org.futo.voiceinput.shared.R.string.try_saying_something)
-                        MagnitudeState.TALKING -> stringResource(org.futo.voiceinput.shared.R.string.listening)
-                        MagnitudeState.MIC_MAY_BE_BLOCKED -> stringResource(org.futo.voiceinput.shared.R.string.no_audio_detected_is_your_microphone_blocked)
-                    },
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = errorMessage!!,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     textAlign = TextAlign.Center
                 )
             }
+        }
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.action_voice_input_title),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(4.dp))
-                IconButton(onClick = onVoiceCancel) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Cancel",
-                        modifier = Modifier.size(28.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
+        IconButton(
+            onClick = onVoiceCancel,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cancel",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
