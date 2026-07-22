@@ -41,6 +41,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -236,11 +237,15 @@ internal fun sanitizeClipboardText(text: String, maxLength: Int = 64): String {
 }
 
 object ClipboardThumbCache {
-    private val cache = LruCache<String, ImageBitmap>(20)
+    // A decoded 384x384 ARGB thumbnail is roughly 576 KiB. Keep this deliberately small because
+    // the keyboard process is long-lived and low-RAM phones should not lose ~12 MiB to previews.
+    private val cache = LruCache<String, ImageBitmap>(8)
 
+    @Synchronized
     fun getOrPut(path: String, lambda: () -> ImageBitmap?): ImageBitmap?
         = cache[path] ?: lambda()?.also { cache.put(path, it) }
 
+    @Synchronized
     fun clear() {
         cache.evictAll()
     }
@@ -251,20 +256,24 @@ object ClipboardThumbCache {
 fun ClipboardEntryView(modifier: Modifier, clipboardEntry: ClipboardEntry, onPaste: (ClipboardEntry) -> Unit, onRemove: (ClipboardEntry) -> Unit, onPin: (ClipboardEntry) -> Unit, bitmapOverride: ImageBitmap? = null) {
     val context = LocalContext.current
 
-    val bitmap = remember(clipboardEntry) {
-        if(clipboardEntry.text == null && clipboardEntry.backingFile != null) {
-            val thumbnail = ClipboardUtil.thumbnailFor(File(context.clipboardDir, clipboardEntry.backingFile))
-            if (thumbnail.exists() || bitmapOverride != null) {
-                bitmapOverride ?: ClipboardThumbCache.getOrPut(thumbnail.name) {
-                    BitmapFactory.decodeFile(thumbnail.absolutePath)?.asImageBitmap()
+    val bitmap = produceState<ImageBitmap?>(bitmapOverride, clipboardEntry, bitmapOverride) {
+        value = if(clipboardEntry.text == null && clipboardEntry.backingFile != null) {
+            bitmapOverride ?: withContext(Dispatchers.IO) {
+                val thumbnail = ClipboardUtil.thumbnailFor(
+                    File(context.clipboardDir, clipboardEntry.backingFile)
+                )
+                if(thumbnail.exists()) {
+                    ClipboardThumbCache.getOrPut(thumbnail.absolutePath) {
+                        BitmapFactory.decodeFile(thumbnail.absolutePath)?.asImageBitmap()
+                    }
+                } else {
+                    null
                 }
-            } else {
-                null
             }
         } else {
             null
         }
-    }
+    }.value
 
     val shape = RoundedCornerShape(8.dp)
 
@@ -983,6 +992,7 @@ ${if(clipboardFileSwap.exists()) { clipboardFileSwap.readText() } else { "File d
 
     override suspend fun cleanUp() {
         saveClipboard()?.join()
+        ClipboardThumbCache.clear()
     }
 
     override fun close() {
@@ -1249,7 +1259,6 @@ val ClipboardHistoryAction = Action(
                                         it
                                     }
                                 } ?: entry.backingFile ?: i
-                                i
                             }) { r_i ->
                                 val i = clipboardList.size - r_i - 1
                                 val entry = clipboardList[i]

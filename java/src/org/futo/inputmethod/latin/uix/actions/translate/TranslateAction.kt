@@ -50,6 +50,7 @@ import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.uix.actions.EmbeddedVoiceInput
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
+import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 
 @Composable
 fun TranslateHeader(
@@ -168,6 +169,7 @@ fun TranslateContents(
 
     val apiKey = context.getSetting(TRANSLATE_API_KEY)
     val customUrl = context.getSetting(TRANSLATE_CUSTOM_URL)
+    val showLiveTranslation = useDataStoreValue(TRANSLATE_LIVE_ENABLED) == true
 
     var sourceLang by remember { mutableStateOf(context.getSetting(TRANSLATE_DEFAULT_SOURCE)) }
     var targetLang by remember { mutableStateOf(context.getSetting(TRANSLATE_DEFAULT_TARGET)) }
@@ -210,9 +212,11 @@ fun TranslateContents(
         }
     }
 
-    LaunchedEffect(voiceMode, translatedText, errorMessage) {
+    LaunchedEffect(voiceMode, translatedText, errorMessage, showLiveTranslation) {
         onSupplementalContentChanged(
-            voiceMode || translatedText.isNotBlank() || errorMessage != null
+            voiceMode ||
+                (showLiveTranslation && translatedText.isNotBlank()) ||
+                errorMessage != null
         )
     }
 
@@ -299,6 +303,7 @@ fun TranslateContents(
                 ) {
                     ActionTextEditor(
                         text = textState,
+                        multiline = true,
                         placeholder = "Type text to translate...",
                         autofocus = true,
                         modifier = if (keyboardShown) {
@@ -349,7 +354,7 @@ fun TranslateContents(
             }
         }
 
-        if (translatedText.isNotBlank() || errorMessage != null) {
+        if ((showLiveTranslation && translatedText.isNotBlank()) || errorMessage != null) {
             Spacer(Modifier.height(4.dp))
             Surface(
                 shape = RoundedCornerShape(12.dp),

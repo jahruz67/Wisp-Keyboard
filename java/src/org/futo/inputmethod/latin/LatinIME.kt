@@ -403,6 +403,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
             activeThemeOption = themeOption
             activeColorScheme.value = themeOption.obtainColors(this@LatinIME)
+            // Build this once up front so the legacy keyboard and Compose UI share it. Without
+            // this, the initial DataStore emission can rebuild every themed drawable and restart
+            // the composition even though the selected theme did not change.
+            getDrawableProvider()
         }
 
         imeManager.onCreate()
@@ -414,21 +418,32 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         launchJob {
             getSettingFlow(THEME_KEY).collect {
                 val themeOption = getThemeOption(this@LatinIME, it).orDefault(this@LatinIME)
+                val nextColors = themeOption.obtainColors(this@LatinIME)
+
+                if(activeThemeOption?.key == themeOption.key
+                    && !activeColorScheme.value.differsFrom(nextColors)) {
+                    return@collect
+                }
 
                 activeThemeOption = themeOption
-                activeColorScheme.value = themeOption.obtainColors(this@LatinIME)
-
-                updateDrawableProvider(activeColorScheme.value)
+                updateDrawableProvider(nextColors)
                 invalidateKeyboard()
             }
         }
 
         launchJob {
+            var previousSettings = Triple(
+                getSetting(HiddenKeysSetting),
+                getSetting(KeyBordersSetting),
+                getSetting(KeyHintsSetting),
+            )
             combine(
                 getSettingFlow(HiddenKeysSetting),
                 getSettingFlow(KeyBordersSetting),
                 getSettingFlow(KeyHintsSetting)
-            ) { a, b, c -> Triple(a, b, c) }.collect {
+            ) { a, b, c -> Triple(a, b, c) }.collect { settings ->
+                    if(settings == previousSettings) return@collect
+                    previousSettings = settings
                     drawableProvider?.let { provider ->
                         if(provider is BasicThemeProvider) {
                             activeThemeOption?.obtainColors?.let { f ->

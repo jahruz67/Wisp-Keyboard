@@ -407,11 +407,8 @@ data class SuggestionLayout(
     val presentableSuggestions: List<SuggestedWordInfo>
 )
 
-fun SuggestedWords.getInfoOrNull(idx: Int): SuggestedWordInfo? = try {
-    getInfo(idx)
-} catch(e: IndexOutOfBoundsException) {
-    null
-}
+fun SuggestedWords.getInfoOrNull(idx: Int): SuggestedWordInfo? =
+    if(idx >= 0 && idx < size()) getInfo(idx) else null
 
 fun makeSuggestionLayout(words: SuggestedWords, blacklist: SuggestionBlacklist?, swipeTailRemovePrimarySuggestion: Boolean): SuggestionLayout {
     val isGestureBatch = words.mInputStyle == SuggestedWords.INPUT_STYLE_UPDATE_BATCH
@@ -433,16 +430,24 @@ fun makeSuggestionLayout(words: SuggestedWords, blacklist: SuggestionBlacklist?,
 
     // We actually have to avoid sorting these because they are provided sorted in an important order
 
-    val emojiMatches = words.mSuggestedWordInfoList.filter {
-        it.kind == KIND_EMOJI_SUGGESTION
+    val emojiMatches = ArrayList<SuggestedWordInfo>()
+    val sortedMatches = ArrayList<SuggestedWordInfo>()
+    for(suggestion in words.mSuggestedWordInfoList) {
+        if(suggestion.kind == KIND_EMOJI_SUGGESTION) {
+            emojiMatches.add(suggestion)
+            continue
+        }
+        if(suggestion == typedWord || suggestion.kind == KIND_TYPED || suggestion == autocorrectMatch) {
+            continue
+        }
+        // Do not include the verbatim word when autocorrecting to avoid such duplicate word situation:
+        // [ hid | **his** | "hid" ]
+        if(!isGestureBatch && autocorrectMatch != null && typedWord != null
+            && suggestion.mWord == typedWord.mWord) {
+            continue
+        }
+        sortedMatches.add(suggestion)
     }
-
-    val sortedMatches = words.mSuggestedWordInfoList.filter {
-        it != typedWord && it.kind != KIND_TYPED && it != autocorrectMatch && !emojiMatches.contains(it)
-            // Do not include the verbatim word when autocorrecting to avoid such duplicate word situation:
-            // [ hid | **his** | "hid" ]
-            && (isGestureBatch || autocorrectMatch == null || typedWord == null || it.mWord != typedWord.mWord)
-    }.toMutableList()
 
     var swipePrimaryElement: SuggestedWordInfo? = null
     if(isSwipeTail && sortedMatches.size > 1) {
@@ -457,12 +462,11 @@ fun makeSuggestionLayout(words: SuggestedWords, blacklist: SuggestionBlacklist?,
         it.mOriginatesFromTransformerLM && it.mScore < -50
     } ?: false
 
-    val presentableSuggestions = (
-            listOf(
-                typedWord,
-                autocorrectMatch,
-            ) + sortedMatches
-    ).filterNotNull()
+    val presentableSuggestions = buildList {
+        typedWord?.let(::add)
+        autocorrectMatch?.let(::add)
+        addAll(sortedMatches)
+    }
 
     return SuggestionLayout(
         autocorrectMatch = autocorrectMatch,
@@ -478,11 +482,14 @@ fun makeSuggestionLayout(words: SuggestedWords, blacklist: SuggestionBlacklist?,
 
 @Composable
 fun RowScope.SuggestionItems(words: SuggestedWords, onClick: (i: Int) -> Unit, onLongClick: (i: Int) -> Unit) {
-    val layout = makeSuggestionLayout(
-        words = words,
-        blacklist = null,
-        swipeTailRemovePrimarySuggestion = useDataStoreValue(DisplayTop4Setting)
-    )
+    val swipeTailRemovePrimarySuggestion = useDataStoreValue(DisplayTop4Setting)
+    val layout = remember(words, swipeTailRemovePrimarySuggestion) {
+        makeSuggestionLayout(
+            words = words,
+            blacklist = null,
+            swipeTailRemovePrimarySuggestion = swipeTailRemovePrimarySuggestion
+        )
+    }
 
     val suggestionItem = @Composable { suggestion: SuggestedWordInfo? ->
         if(suggestion != null) {
@@ -1325,7 +1332,7 @@ fun BoxScope.ActionBarWithExpandableCandidates(
     expandableSuggestionCfg: ExpandableSuggestionBarConfiguration,
 ) {
     val wordList = remember(words) {
-        words?.mSuggestedWordInfoList?.toList()?.filter {
+        words?.mSuggestedWordInfoList?.filter {
             !it.isKindOf(KIND_TYPED)
         } ?: emptyList()
     }
@@ -1334,10 +1341,11 @@ fun BoxScope.ActionBarWithExpandableCandidates(
     val lazyListState = rememberLazyListState()
 
     LaunchedEffect(wordList, words?.mHighlightedCandidate) {
-        if(words?.mHighlightedCandidate != null) {
-            lazyListState.scrollToItem(words.mHighlightedCandidate + START_OF_CANDIDATES)
-        } else {
-            lazyListState.scrollToItem(START_OF_CANDIDATES)
+        val target = words?.mHighlightedCandidate?.plus(START_OF_CANDIDATES)
+            ?: START_OF_CANDIDATES
+        if(lazyListState.firstVisibleItemIndex != target
+            || lazyListState.firstVisibleItemScrollOffset != 0) {
+            lazyListState.scrollToItem(target)
         }
     }
 

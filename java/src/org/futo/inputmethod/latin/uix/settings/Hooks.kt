@@ -6,9 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -18,10 +18,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.dataStore
@@ -46,15 +45,16 @@ val LocalSharedPrefsCache = compositionLocalOf<SharedPrefsCache?> {
 @Composable
 fun DataStoreCacheProvider(content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val initialPrefs = remember {
-        runBlocking {
-            context.dataStore.data.first()
-        }
-    }
-    val prefs = context.dataStore.data.collectAsState(initialPrefs)
+    // DataStoreHelper is initialized before the keyboard UI is composed, so that path can render
+    // immediately from memory. Other entry points wait for the asynchronous first emission rather
+    // than blocking the main thread or briefly rendering defaults over persisted settings.
+    val initialPrefs = remember { DataStoreHelper.getPreferences() }
+    val prefs = produceState<Preferences?>(initialPrefs, context) {
+        context.dataStore.data.collect { value = it }
+    }.value ?: return
 
-    val cache = remember(prefs.value) {
-        DataStoreCache(prefs.value)
+    val cache = remember(prefs) {
+        DataStoreCache(prefs)
     }
 
     CompositionLocalProvider(LocalDataStoreCache provides cache) {

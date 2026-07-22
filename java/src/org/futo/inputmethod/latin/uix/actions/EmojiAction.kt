@@ -89,7 +89,6 @@ import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -173,21 +172,24 @@ fun <T> List<T>.searchMultiple(searchTarget: String, maxDistance: Int = searchTa
 
 fun <T> List<T>.searchMultiple2(searchTarget: String, keyFunction: (T) -> List<String>): List<T> {
     val query = searchTarget.lowercase()
-    return this.mapNotNull { item ->
-        val keys = keyFunction(item).map { it.lowercase() }
-        val matches = keys.any { it == query }
-        val starts = keys.any { it.startsWith(query) }
-        val contains = keys.any { it.contains(query) }
-
-        val score = when {
-            matches -> 0
-            starts -> 1
-            contains -> 2
-            else -> return@mapNotNull null
+    val results = ArrayList<Pair<T, Int>>()
+    for(item in this) {
+        var bestScore = Int.MAX_VALUE
+        for(rawKey in keyFunction(item)) {
+            val key = rawKey.lowercase()
+            val score = when {
+                key == query -> 0
+                key.startsWith(query) -> 1
+                key.contains(query) -> 2
+                else -> continue
+            }
+            if(score < bestScore) bestScore = score
+            if(bestScore == 0) break
         }
-
-        item to score
-    }.sortedBy { it.second }.map { it.first }
+        if(bestScore != Int.MAX_VALUE) results.add(item to bestScore)
+    }
+    results.sortBy { it.second }
+    return results.map { it.first }
 }
 
 
@@ -440,20 +442,15 @@ fun Emojis(
                             super.onScrolled(recyclerView, dx, dy)
                             val layoutManager = recyclerView.layoutManager as GridLayoutManager
                             val firstVisiblePosition = layoutManager.findFirstVisibleItemPosition()
-                            val lastVisiblePosition = layoutManager.findLastCompletelyVisibleItemPosition()
-
-                            val finalCategoryIndex = emojis.indexOfLast { it is CategoryItem }
-                            if(finalCategoryIndex == -1) return
-
-                            if(finalCategoryIndex < lastVisiblePosition) {
-                                currentCategory.value = emojis[finalCategoryIndex] as CategoryItem
-                            } else {
-                                val itm = emojis.subList(0, firstVisiblePosition + 1)
-                                    .lastOrNull { it is CategoryItem }
-
-                                if (itm != null) {
-                                    currentCategory.value = itm as CategoryItem
+                            val currentItems = emojiAdapter.currentList
+                            var position = firstVisiblePosition.coerceAtMost(currentItems.lastIndex)
+                            while(position >= 0) {
+                                val item = currentItems[position]
+                                if(item is CategoryItem) {
+                                    if(currentCategory.value != item) currentCategory.value = item
+                                    break
                                 }
+                                position--
                             }
                         }
                     })
@@ -461,10 +458,14 @@ fun Emojis(
             },
             update = {
                 if (viewWidth > 0) {
-                    val spanCount = (viewWidth / emojiWidth)
+                    val spanCount = (viewWidth / emojiWidth).coerceAtLeast(1)
                     val wideSpanCount = (spanCount / 2 + 1).coerceAtLeast(2)
                     val newWideCellWidth = ((spanCount.toFloat() / wideSpanCount.toFloat()) * 100.0f).toInt()
-                    (it.layoutManager as GridLayoutManager).spanCount = (viewWidth / emojiWidth) * 100
+                    val layoutManager = it.layoutManager as GridLayoutManager
+                    val newSpanCount = spanCount * 100
+                    if(layoutManager.spanCount != newSpanCount) {
+                        layoutManager.spanCount = newSpanCount
+                    }
                     if(wideEmojiWidth != newWideCellWidth) {
                         wideEmojiWidth = newWideCellWidth
                         emojiAdapter.wideCellWidth = newWideCellWidth / 100.0f
@@ -778,7 +779,7 @@ fun EmojiGrid(
     }
 
     val recentEmojis = remember {
-        runBlocking { context.getRecentEmojis() }.map {
+        context.getRecentEmojis().map {
             EmojiItem(it, description = "", category = emojiCategoryMap[it] ?: "", skinTones = false)
         }
     }
@@ -804,13 +805,16 @@ fun EmojiGrid(
     val jumpCategory: MutableState<CategoryItem?> = remember { mutableStateOf(null) }
 
 
-    var emojiList = buildList<EmojiViewItem> {
-        if(recentEmojis.isNotEmpty()) {
-            add(CategoryItem("Recent"))
-            addAll(recentEmojis.map { EmojiItemItem(it) })
+    val fullEmojiList = remember(recentEmojis, categorizedEmojis) {
+        buildList<EmojiViewItem> {
+            if(recentEmojis.isNotEmpty()) {
+                add(CategoryItem("Recent"))
+                addAll(recentEmojis.map { EmojiItemItem(it) })
+            }
+            addAll(categorizedEmojis)
         }
-        addAll(categorizedEmojis)
     }
+    var emojiList = fullEmojiList
 
     if(isSearching) {
         val context = LocalContext.current
@@ -1237,7 +1241,7 @@ val EmojiAction = Action(
                             listOf(
                                 DialogRequestItem(resources.getString(R.string.action_emoji_clear_recent_emojis_cancel)) {},
                                 DialogRequestItem(resources.getString(R.string.action_emoji_clear_recent_emojis_clear)) {
-                                    runBlocking {
+                                    manager.getLifecycleScope().launch {
                                         manager.getContext().resetRecentEmojis()
                                     }
                                     manager.closeActionWindow()

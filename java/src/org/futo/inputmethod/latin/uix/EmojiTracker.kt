@@ -18,7 +18,7 @@ object EmojiTracker {
         }
     }
 
-    suspend fun Context.getRecentEmojis(): List<String> {
+    fun Context.getRecentEmojis(): List<String> {
         if(isDeviceLocked) return listOf()
 
         return getSetting(lastUsedEmoji, "")

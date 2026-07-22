@@ -244,19 +244,23 @@ val Context.isDirectBootUnlocked: Boolean
 class DataStoreHelper {
     @OptIn(DelicateCoroutinesApi::class)
     companion object {
+        @Volatile
         private var initialized: Boolean = false
+
+        @Volatile
         private var currentPreferences: Preferences = preferencesOf()
 
         @JvmStatic
+        @Synchronized
         fun init(context: Context) {
             if(initialized) return
-            initialized = true
 
             runBlocking {
                 context.dataStore.data.first().let {
                     currentPreferences = it
                 }
             }
+            initialized = true
 
             GlobalScope.launch {
                 context.dataStore.data.collect {
@@ -267,6 +271,9 @@ class DataStoreHelper {
 
         @JvmStatic
         fun<T> getSettingOrNull(key: Preferences.Key<T>): T? = currentPreferences[key]
+
+        @JvmStatic
+        fun getPreferences(): Preferences? = if(initialized) currentPreferences else null
 
         @JvmStatic
         fun<T> getSetting(key: Preferences.Key<T>, default: T): T = getSettingOrNull(key) ?: default

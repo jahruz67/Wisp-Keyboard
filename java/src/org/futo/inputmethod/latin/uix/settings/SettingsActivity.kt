@@ -26,9 +26,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.DialogNavigator
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -101,8 +99,6 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
     }
 
     companion object {
-        private var pollJob: Job? = null
-
         @JvmStatic
         fun openToNavDest(context: Context, navDest: String?) {
             val intent = Intent()
@@ -115,7 +111,8 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
         }
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
+    private var pollJob: Job? = null
+
     fun updateSystemState() {
         val inputMethodEnabled = isInputMethodEnabled()
         val inputMethodSelected = isDefaultIMECurrent()
@@ -143,7 +140,7 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
 
         if(!inputMethodEnabled || !inputMethodSelected) {
             if(pollJob == null || !pollJob!!.isActive) {
-                pollJob = GlobalScope.launch {
+                pollJob = lifecycleScope.launch {
                     systemStatePoller()
                 }
             }
@@ -151,8 +148,9 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
     }
 
     private suspend fun systemStatePoller() {
-        while(!this.inputMethodEnabled.value || !this.inputMethodSelected.value) {
-            delay(200)
+        while(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            && (!this.inputMethodEnabled.value || !this.inputMethodSelected.value)) {
+            delay(500)
             updateSystemState()
         }
     }

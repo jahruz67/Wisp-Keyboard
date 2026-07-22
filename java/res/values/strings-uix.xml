@@ -738,6 +738,6 @@ Default is %1$s</string>
     <string name="translate_setting_default_source">Default Source Language</string>
     <string name="translate_setting_default_target">Default Target Language</string>
     <string name="translate_setting_live_translate">Live Translation</string>
-    <string name="translate_setting_live_translate_subtitle">Translate dynamically as you type</string>
+    <string name="translate_setting_live_translate_subtitle">Show translated text below the editor as you type</string>
     <string name="action_translate_title">Translate</string>
 </resources>

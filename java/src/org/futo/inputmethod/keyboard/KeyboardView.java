@@ -381,7 +381,7 @@ public class KeyboardView extends View {
             bgX = (keyWidth - bgWidth) / 2;
             bgY = (keyHeight - bgHeight) / 2;
         } else {
-            final Rect padding = new Rect();
+            final Rect padding = mKeyBackgroundPadding;
             background.getPadding(padding);
 
             bgWidth = keyWidth + padding.left + padding.right;

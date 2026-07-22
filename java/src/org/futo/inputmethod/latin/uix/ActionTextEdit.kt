@@ -10,6 +10,7 @@ import android.os.Handler
 import android.text.InputFilter
 import android.util.AttributeSet
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.view.inputmethod.CompletionInfo
@@ -234,7 +235,14 @@ private fun GenericEditTextCompose(
                 if(forcedLayout != null) append(forcedLayout)
             }.toString()
 
-            setHeight(height.toInt())
+            if (multiline) {
+                minHeight = height.toInt()
+                gravity = Gravity.TOP or Gravity.START
+                setHorizontallyScrolling(false)
+                isSingleLine = false
+            } else {
+                setHeight(height.toInt())
+            }
 
             if(onOverride != null) {
                 val editorInfo = EditorInfo().apply {
