@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.Action
@@ -46,11 +48,16 @@ import org.futo.inputmethod.latin.uix.ActionTextEditor
 import org.futo.inputmethod.latin.uix.ActionWindow
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
+import org.futo.inputmethod.latin.uix.deferSetSetting
 import org.futo.inputmethod.latin.uix.getSetting
-import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.uix.actions.EmbeddedVoiceInput
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
+import java.util.concurrent.atomic.AtomicInteger
+
+private val supportedLanguageByCode = ALL_SUPPORTED_LANGUAGES.associateBy { it.code }
+private val targetLanguages = ALL_SUPPORTED_LANGUAGES.filterNot { it.code == "auto" }
+private val targetLanguageByCode = targetLanguages.associateBy { it.code }
 
 @Composable
 fun TranslateHeader(
@@ -60,9 +67,8 @@ fun TranslateHeader(
     onTargetChanged: (String) -> Unit,
     onSwap: () -> Unit
 ) {
-    val srcLang = ALL_SUPPORTED_LANGUAGES.find { it.code == sourceLangCode } ?: ALL_SUPPORTED_LANGUAGES.first()
-    val targetLangs = ALL_SUPPORTED_LANGUAGES.filter { it.code != "auto" }
-    val tgtLang = targetLangs.find { it.code == targetLangCode } ?: targetLangs.first()
+    val srcLang = supportedLanguageByCode[sourceLangCode] ?: ALL_SUPPORTED_LANGUAGES.first()
+    val tgtLang = targetLanguageByCode[targetLangCode] ?: targetLanguages.first()
 
     var showSrcMenu by remember { mutableStateOf(false) }
     var showTgtMenu by remember { mutableStateOf(false) }
@@ -139,7 +145,7 @@ fun TranslateHeader(
                 )
             }
             DropdownMenu(expanded = showTgtMenu, onDismissRequest = { showTgtMenu = false }) {
-                targetLangs.forEach { lang ->
+                targetLanguages.forEach { lang ->
                     DropdownMenuItem(
                         text = { Text(lang.name) },
                         onClick = {
@@ -160,29 +166,29 @@ fun TranslateContents(
     onSupplementalContentChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
-    val currentProviderName = context.getSetting(TRANSLATE_PROVIDER)
-    val providerType = try {
-        TranslationProviderType.valueOf(currentProviderName)
-    } catch (e: Exception) {
-        TranslationProviderType.GOOGLE_FREE
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val providerType = remember(context) {
+        TranslationProviderType.fromName(context.getSetting(TRANSLATE_PROVIDER))
     }
-
-    val apiKey = context.getSetting(TRANSLATE_API_KEY)
-    val customUrl = context.getSetting(TRANSLATE_CUSTOM_URL)
+    val apiKey = remember(context) { context.getSetting(TRANSLATE_API_KEY) }
+    val customUrl = remember(context) { context.getSetting(TRANSLATE_CUSTOM_URL) }
     val showLiveTranslation = useDataStoreValue(TRANSLATE_LIVE_ENABLED) == true
 
     var sourceLang by remember { mutableStateOf(context.getSetting(TRANSLATE_DEFAULT_SOURCE)) }
     var targetLang by remember { mutableStateOf(context.getSetting(TRANSLATE_DEFAULT_TARGET)) }
 
     val textState = remember { mutableStateOf("") }
+    val query by remember { derivedStateOf { textState.value.trim() } }
     var translatedText by remember { mutableStateOf("") }
     var isTranslating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val translationRequestVersion = remember { AtomicInteger() }
 
     var voiceMode by remember { mutableStateOf(false) }
 
-    LaunchedEffect(textState.value, sourceLang, targetLang) {
-        val query = textState.value.trim()
+    LaunchedEffect(query, sourceLang, targetLang) {
+        val requestVersion = translationRequestVersion.incrementAndGet()
+        isTranslating = false
         if (query.isEmpty()) {
             translatedText = ""
             errorMessage = null
@@ -190,25 +196,30 @@ fun TranslateContents(
             return@LaunchedEffect
         }
 
-        isTranslating = true
         errorMessage = null
         delay(400L)
+        isTranslating = true
 
-        val res = TranslationService.translate(
-            text = query,
-            sourceLang = sourceLang,
-            targetLang = targetLang,
-            providerType = providerType,
-            apiKey = apiKey,
-            customUrl = customUrl
-        )
+        try {
+            val res = TranslationService.translate(
+                text = query,
+                sourceLang = sourceLang,
+                targetLang = targetLang,
+                providerType = providerType,
+                apiKey = apiKey,
+                customUrl = customUrl
+            )
 
-        isTranslating = false
-        res.onSuccess {
-            translatedText = it
-            errorMessage = null
-        }.onFailure {
-            errorMessage = it.localizedMessage ?: "Translation failed"
+            res.onSuccess {
+                translatedText = it
+                errorMessage = null
+            }.onFailure {
+                errorMessage = it.localizedMessage ?: "Translation failed"
+            }
+        } finally {
+            if (translationRequestVersion.get() == requestVersion) {
+                isTranslating = false
+            }
         }
     }
 
@@ -243,19 +254,19 @@ fun TranslateContents(
             targetLangCode = targetLang,
             onSourceChanged = {
                 sourceLang = it
-                context.setSettingBlocking(TRANSLATE_DEFAULT_SOURCE.key, it)
+                lifecycleOwner.deferSetSetting(context, TRANSLATE_DEFAULT_SOURCE, it)
             },
             onTargetChanged = {
                 targetLang = it
-                context.setSettingBlocking(TRANSLATE_DEFAULT_TARGET.key, targetLang)
+                lifecycleOwner.deferSetSetting(context, TRANSLATE_DEFAULT_TARGET, it)
             },
             onSwap = {
                 if (sourceLang != "auto") {
                     val temp = sourceLang
                     sourceLang = targetLang
                     targetLang = temp
-                    context.setSettingBlocking(TRANSLATE_DEFAULT_SOURCE.key, sourceLang)
-                    context.setSettingBlocking(TRANSLATE_DEFAULT_TARGET.key, targetLang)
+                    lifecycleOwner.deferSetSetting(context, TRANSLATE_DEFAULT_SOURCE, sourceLang)
+                    lifecycleOwner.deferSetSetting(context, TRANSLATE_DEFAULT_TARGET, targetLang)
                 }
             }
         )

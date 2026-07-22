@@ -2,6 +2,7 @@ package org.futo.inputmethod.latin.uix.actions.translate
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.uix.SettingsKey
@@ -11,13 +12,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 enum class TranslationProviderType(val displayName: String, val requiresApiKey: Boolean, val supportsCustomUrl: Boolean) {
     GOOGLE_FREE("Google Translate (Free)", false, false),
     GOOGLE_CLOUD("Google Cloud Translation API", true, false),
     DEEPL("DeepL API", true, false),
     OPENAI("OpenAI (ChatGPT)", true, false),
-    LIBRE_TRANSLATE("LibreTranslate", false, true)
+    LIBRE_TRANSLATE("LibreTranslate", false, true);
+
+    companion object {
+        fun fromName(name: String?): TranslationProviderType =
+            entries.firstOrNull { it.name == name } ?: GOOGLE_FREE
+    }
 }
 
 val TRANSLATE_ADDON_ENABLED = SettingsKey(
@@ -84,6 +91,11 @@ val ALL_SUPPORTED_LANGUAGES = listOf(
 
 object TranslationService {
 
+    private val googleCloudUrl = URL("https://translation.googleapis.com/language/translate/v2")
+    private val deepLFreeUrl = URL("https://api-free.deepl.com/v2/translate")
+    private val deepLUrl = URL("https://api.deepl.com/v2/translate")
+    private val openAiUrl = URL("https://api.openai.com/v1/chat/completions")
+
     suspend fun translate(
         text: String,
         sourceLang: String,
@@ -91,20 +103,27 @@ object TranslationService {
         providerType: TranslationProviderType,
         apiKey: String,
         customUrl: String?
-    ): Result<String> = withContext(Dispatchers.IO) {
-        if (text.isBlank()) return@withContext Result.success("")
+    ): Result<String> {
+        if (text.isBlank()) return Result.success("")
+        if (sourceLang != "auto" && sourceLang.equals(targetLang, ignoreCase = true)) {
+            return Result.success(text)
+        }
 
-        try {
-            val resultText = when (providerType) {
-                TranslationProviderType.GOOGLE_FREE -> translateGoogleFree(text, sourceLang, targetLang)
-                TranslationProviderType.GOOGLE_CLOUD -> translateGoogleCloud(text, sourceLang, targetLang, apiKey)
-                TranslationProviderType.DEEPL -> translateDeepL(text, sourceLang, targetLang, apiKey)
-                TranslationProviderType.OPENAI -> translateOpenAI(text, sourceLang, targetLang, apiKey)
-                TranslationProviderType.LIBRE_TRANSLATE -> translateLibre(text, sourceLang, targetLang, apiKey, customUrl)
+        return withContext(Dispatchers.IO) {
+            try {
+                val resultText = when (providerType) {
+                    TranslationProviderType.GOOGLE_FREE -> translateGoogleFree(text, sourceLang, targetLang)
+                    TranslationProviderType.GOOGLE_CLOUD -> translateGoogleCloud(text, sourceLang, targetLang, apiKey)
+                    TranslationProviderType.DEEPL -> translateDeepL(text, sourceLang, targetLang, apiKey)
+                    TranslationProviderType.OPENAI -> translateOpenAI(text, sourceLang, targetLang, apiKey)
+                    TranslationProviderType.LIBRE_TRANSLATE -> translateLibre(text, sourceLang, targetLang, apiKey, customUrl)
+                }
+                Result.success(resultText)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-            Result.success(resultText)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -133,7 +152,7 @@ object TranslationService {
 
     private fun translateGoogleCloud(text: String, source: String, target: String, apiKey: String): String {
         if (apiKey.isBlank()) throw IllegalArgumentException("Google Cloud API Key is missing")
-        val urlStr = "https://translation.googleapis.com/language/translate/v2?key=$apiKey"
+        val url = URL("$googleCloudUrl?key=$apiKey")
         val body = JSONObject().apply {
             put("q", text)
             put("target", target)
@@ -141,7 +160,7 @@ object TranslationService {
             put("format", "text")
         }.toString()
 
-        val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+        val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 8000
             readTimeout = 8000
@@ -158,14 +177,14 @@ object TranslationService {
 
     private fun translateDeepL(text: String, source: String, target: String, apiKey: String): String {
         if (apiKey.isBlank()) throw IllegalArgumentException("DeepL API Key is missing")
-        val baseUrl = if (apiKey.endsWith(":fx")) "https://api-free.deepl.com/v2/translate" else "https://api.deepl.com/v2/translate"
+        val endpoint = if (apiKey.endsWith(":fx")) deepLFreeUrl else deepLUrl
         val body = JSONObject().apply {
             put("text", JSONArray().put(text))
-            put("target_lang", target.uppercase())
-            if (source != "auto") put("source_lang", source.uppercase())
+            put("target_lang", target.uppercase(Locale.ROOT))
+            if (source != "auto") put("source_lang", source.uppercase(Locale.ROOT))
         }.toString()
 
-        val connection = (URL(baseUrl).openConnection() as HttpURLConnection).apply {
+        val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 8000
             readTimeout = 8000
@@ -183,7 +202,6 @@ object TranslationService {
 
     private fun translateOpenAI(text: String, source: String, target: String, apiKey: String): String {
         if (apiKey.isBlank()) throw IllegalArgumentException("OpenAI API Key is missing")
-        val urlStr = "https://api.openai.com/v1/chat/completions"
         val prompt = "Translate the following text into target language code '$target' (source is '$source'). Return ONLY the translated text without any explanation, quotes, or markdown:\n\n$text"
         val body = JSONObject().apply {
             put("model", "gpt-4o-mini")
@@ -194,7 +212,7 @@ object TranslationService {
             put("temperature", 0.3)
         }.toString()
 
-        val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+        val connection = (openAiUrl.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10000
             readTimeout = 10000

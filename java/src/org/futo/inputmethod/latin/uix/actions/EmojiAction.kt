@@ -89,6 +89,8 @@ import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -124,6 +126,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.GZIPInputStream
 import kotlin.math.max
 import kotlin.math.min
@@ -170,13 +173,21 @@ fun <T> List<T>.searchMultiple(searchTarget: String, maxDistance: Int = searchTa
     }.sortedBy { it.second }.map { it.first }
 }
 
-fun <T> List<T>.searchMultiple2(searchTarget: String, keyFunction: (T) -> List<String>): List<T> {
-    val query = searchTarget.lowercase()
-    val results = ArrayList<Pair<T, Int>>()
+fun <T> List<T>.searchMultiple2(
+    searchTarget: String,
+    limit: Int = Int.MAX_VALUE,
+    keyFunction: (T) -> List<String>
+): List<T> {
+    if (limit <= 0) return emptyList()
+
+    val query = searchTarget.lowercase(Locale.ROOT)
+    val exactMatches = ArrayList<T>(minOf(size, limit))
+    val prefixMatches = ArrayList<T>(minOf(size, limit))
+    val containsMatches = ArrayList<T>(minOf(size, limit))
+
     for(item in this) {
         var bestScore = Int.MAX_VALUE
-        for(rawKey in keyFunction(item)) {
-            val key = rawKey.lowercase()
+        for(key in keyFunction(item)) {
             val score = when {
                 key == query -> 0
                 key.startsWith(query) -> 1
@@ -186,10 +197,22 @@ fun <T> List<T>.searchMultiple2(searchTarget: String, keyFunction: (T) -> List<S
             if(score < bestScore) bestScore = score
             if(bestScore == 0) break
         }
-        if(bestScore != Int.MAX_VALUE) results.add(item to bestScore)
+
+        when (bestScore) {
+            0 -> {
+                exactMatches.add(item)
+                if (exactMatches.size == limit) return exactMatches
+            }
+            1 -> if (prefixMatches.size < limit) prefixMatches.add(item)
+            2 -> if (containsMatches.size < limit) containsMatches.add(item)
+        }
     }
-    results.sortBy { it.second }
-    return results.map { it.first }
+
+    return buildList(minOf(limit, exactMatches.size + prefixMatches.size + containsMatches.size)) {
+        addAll(exactMatches)
+        addAll(prefixMatches.take(limit - size))
+        addAll(containsMatches.take(limit - size))
+    }
 }
 
 
@@ -826,13 +849,13 @@ fun EmojiGrid(
         val translations = PersistentEmojiState.getTranslationForLocales(locales)
 
         emojiList =
-            emojiList.filterIsInstance<EmojiItemItem>().searchMultiple2(searchFilter) { item ->
+            emojiList.filterIsInstance<EmojiItemItem>().searchMultiple2(searchFilter, limit = 30) { item ->
                 translations?.let {
                     it.emojiToNames[item.emoji.emoji]?.names
                         ?: it.emojiToNames[item.emoji.emoji.replace("\uFE0F", "")]?.names
                         ?: it.emojiToNames[item.emoji.emoji + "\uFE0F"]?.names
-                } ?: listOf(item.emoji.description)
-            }.take(30).distinctBy { it.emoji.emoji }
+                } ?: listOf(item.emoji.description.lowercase(Locale.ROOT))
+            }.distinctBy { it.emoji.emoji }
 
         if(emojiList.isEmpty()) {
             // Note: this gets matched and auto translated by localizedCategoryNameMap, don't
@@ -929,10 +952,16 @@ class PersistentEmojiState : PersistentActionState {
     companion object {
         var emojis: MutableState<List<EmojiItem>?> = mutableStateOf(null)
         var emojiMap: HashMap<String, EmojiItem> = HashMap()
+        private val emojiLoadMutex = Mutex()
+        private val lowQualityShortcuts = setOf(
+            "flag", "united", "japanese", "mrs", "lady", "empty", "small", "last",
+            "flat", "high", "old", "low", "long", "american", "cape", "costa", "cook",
+            "diego", "central", "south", "heard", "north", "san", "el", "us"
+        )
 
         // Language name to translations
-        private val loadedTranslations: HashMap<String, EmojiTranslations> = hashMapOf()
-        private val loadedTranslatedShortcuts: HashMap<String, Map<String, String>> = hashMapOf()
+        private val loadedTranslations = ConcurrentHashMap<String, EmojiTranslations>()
+        private val loadedTranslatedShortcuts = ConcurrentHashMap<String, Map<String, String>>()
 
         @JvmStatic
         fun getTranslationForLocale(locale: Locale): EmojiTranslations? {
@@ -974,8 +1003,7 @@ class PersistentEmojiState : PersistentActionState {
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         fun loadTranslationsForLanguage(context: Context, locale: Locale) {
             val language = locale.language
-            if (loadedTranslations.contains(language)) return
-            loadedTranslations.put(language, EmojiTranslations(hashMapOf()))
+            if (loadedTranslations.putIfAbsent(language, EmojiTranslations(emptyMap())) != null) return
 
             if(language == "en") {
                 // Shortcuts are sourced from gemoji
@@ -1003,7 +1031,9 @@ class PersistentEmojiState : PersistentActionState {
 
                 if (data != null) {
                     val translations = data.map { entry ->
-                        val names = entry.value.jsonArray.map { it.jsonPrimitive.content }
+                        val names = entry.value.jsonArray.map {
+                            it.jsonPrimitive.content.lowercase(Locale.ROOT)
+                        }
                         entry.key to EmojiNames(names)
                     }.toMap()
                     loadedTranslations.put(language, EmojiTranslations(translations))
@@ -1035,107 +1065,110 @@ class PersistentEmojiState : PersistentActionState {
 
         @JvmStatic
         suspend fun loadEmojis(context: Context) = withContext(Dispatchers.IO) {
-            val stream = context.resources.openRawResource(R.raw.gemoji)
-            val text = stream.bufferedReader().readText()
+            emojiLoadMutex.withLock {
+                if (emojis.value != null) return@withLock
 
-            val supplementalEmoteText = context.resources.openRawResource(R.raw.supplemental_emotes)
-                .bufferedReader().readText()
+                val text = context.resources.openRawResource(R.raw.gemoji)
+                    .bufferedReader().use { it.readText() }
+                val supplementalEmoteText = context.resources.openRawResource(R.raw.supplemental_emotes)
+                    .bufferedReader().use { it.readText() }
+                val compatTypeface = context.compatEmojiTypeface
 
-            val compatTypeface = context.compatEmojiTypeface
+                withContext(Dispatchers.Default) {
+                    val emojiData = Json.parseToJsonElement(text).jsonArray.toList()
+                    val supplementalEmoteData = Json.parseToJsonElement(supplementalEmoteText).jsonArray
+                        .toList()
 
-            withContext(Dispatchers.Default) {
-                val emojiData = Json.parseToJsonElement(text).jsonArray.toList()
-                val supplementalEmoteData = Json.parseToJsonElement(supplementalEmoteText).jsonArray
-                    .toList()
+                    val englishShortcuts = mutableListOf<LooseShortcut>()
+                    val englishTranslations = hashMapOf<String, EmojiNames>()
 
-                val englishShortcuts = mutableListOf<LooseShortcut>()
-                val englishTranslations = hashMapOf<String, EmojiNames>()
+                    val loadedEmojis = (emojiData + supplementalEmoteData).mapNotNull {
+                        val emoji = it.jsonObject["emoji"]!!.jsonPrimitive.content
+                        val version = it.jsonObject["unicode_version"]!!.jsonPrimitive.content
+                        val description = it.jsonObject["description"]!!.jsonPrimitive.content
+                        val category = it.jsonObject["category"]!!.jsonPrimitive.content
 
-                emojis.value = (emojiData + supplementalEmoteData).mapNotNull {
-                    val emoji = it.jsonObject["emoji"]!!.jsonPrimitive.content
-                    val version = it.jsonObject["unicode_version"]!!.jsonPrimitive.content
-                    val description = it.jsonObject["description"]!!.jsonPrimitive.content
-                    val category = it.jsonObject["category"]!!.jsonPrimitive.content
+                        val tags = it.jsonObject["tags"]?.jsonArray?.map { it.jsonPrimitive.content }
+                            ?.toList() ?: listOf()
+                        val aliases = it.jsonObject["aliases"]?.jsonArray?.map { it.jsonPrimitive.content }
+                            ?.toList() ?: listOf()
 
-                    val tags = it.jsonObject["tags"]?.jsonArray?.map { it.jsonPrimitive.content }
-                        ?.toList() ?: listOf()
-                    val aliases = it.jsonObject["aliases"]?.jsonArray?.map { it.jsonPrimitive.content }
-                        ?.toList() ?: listOf()
-
-                    val supported = when {
-                        category == "ASCII" -> true
-                        else -> emojiShouldShow(emoji, compatTypeface)
-                    }
-
-                    if(!supported) {
-                        null
-                    } else {
-                        englishTranslations.put(emoji, EmojiNames(listOf(description) + aliases + tags))
-
-                        if(!description.contains(' ')) {
-                            englishShortcuts.add(LooseShortcut(emoji = emoji, shortcut = description, score = 10))
+                        val supported = when {
+                            category == "ASCII" -> true
+                            else -> emojiShouldShow(emoji, compatTypeface)
                         }
 
-                        aliases.forEach { x ->
-                            englishShortcuts.add(LooseShortcut(emoji = emoji, shortcut = x, score = 5))
-                        }
+                        if(!supported) {
+                            null
+                        } else {
+                            englishTranslations.put(
+                                emoji,
+                                EmojiNames((listOf(description) + aliases + tags).map {
+                                    it.lowercase(Locale.ROOT)
+                                })
+                            )
 
-                        if(category != "ASCII") {
-                            tags.forEach { x ->
-                                englishShortcuts.add(
-                                    LooseShortcut(
-                                        emoji = emoji,
-                                        shortcut = x,
-                                        score = 4
-                                    )
-                                )
+                            if(!description.contains(' ')) {
+                                englishShortcuts.add(LooseShortcut(emoji = emoji, shortcut = description, score = 10))
                             }
 
-                            val lowQualityShortcuts = setOf("flag", "united", "japanese", "mrs",
-                                "lady", "empty", "small", "last", "flat", "high", "old", "low",
-                                "long", "american", "cape", "costa", "cook", "diego", "central",
-                                "south", "heard", "north", "san", "el", "us")
+                            aliases.forEach { x ->
+                                englishShortcuts.add(LooseShortcut(emoji = emoji, shortcut = x, score = 5))
+                            }
 
-                            (tags + aliases).filter {
-                                it.contains('_')
-                            }.forEach { x ->
-                                val shortcut = x.split('_')[0]
-                                if(shortcut !in lowQualityShortcuts) {
+                            if(category != "ASCII") {
+                                tags.forEach { x ->
                                     englishShortcuts.add(
                                         LooseShortcut(
                                             emoji = emoji,
-                                            shortcut = shortcut,
-                                            score = 0
+                                            shortcut = x,
+                                            score = 4
                                         )
                                     )
                                 }
+
+                                (tags + aliases).filter {
+                                    it.contains('_')
+                                }.forEach { x ->
+                                    val shortcut = x.split('_')[0]
+                                    if(shortcut !in lowQualityShortcuts) {
+                                        englishShortcuts.add(
+                                            LooseShortcut(
+                                                emoji = emoji,
+                                                shortcut = shortcut,
+                                                score = 0
+                                            )
+                                        )
+                                    }
+                                }
                             }
+
+                            EmojiItem(
+                                emoji = emoji,
+                                description = description,
+                                category = category,
+                                skinTones = it.jsonObject["skin_tones"]?.jsonPrimitive?.booleanOrNull == true,
+                                //tags = it.jsonObject["tags"]?.jsonArray?.map { it.jsonPrimitive.content }
+                                //    ?.toList() ?: listOf(),
+                                //aliases =
+                            )
                         }
-
-                        EmojiItem(
-                            emoji = emoji,
-                            description = description,
-                            category = category,
-                            skinTones = it.jsonObject["skin_tones"]?.jsonPrimitive?.booleanOrNull == true,
-                            //tags = it.jsonObject["tags"]?.jsonArray?.map { it.jsonPrimitive.content }
-                            //    ?.toList() ?: listOf(),
-                            //aliases =
-                        )
                     }
-                }
 
-                emojiMap = HashMap<String, EmojiItem>().apply {
-                    emojis.value!!.forEach {
-                        put(it.emoji, it)
+                    emojiMap = HashMap<String, EmojiItem>().apply {
+                        loadedEmojis.forEach {
+                            put(it.emoji, it)
+                        }
                     }
+
+                    loadedTranslatedShortcuts["en"] = englishShortcuts
+                        .sortedByDescending { it.score }
+                        .distinctBy { it.shortcut }
+                        .associate { it.shortcut to it.emoji }
+
+                    loadedTranslations["en_gemoji"] = EmojiTranslations(englishTranslations)
+                    emojis.value = loadedEmojis
                 }
-
-                loadedTranslatedShortcuts["en"] = englishShortcuts
-                    .sortedByDescending { it.score }
-                    .distinctBy { it.shortcut }
-                    .associate { it.shortcut to it.emoji }
-
-                loadedTranslations["en_gemoji"] = EmojiTranslations(englishTranslations)
             }
         }
 

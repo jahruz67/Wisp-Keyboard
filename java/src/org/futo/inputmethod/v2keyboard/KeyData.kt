@@ -47,6 +47,17 @@ fun Direction.toVector(): Pair<Double, Double> = when(this) {
     Direction.SouthWest -> 0.70710 to -0.70710
 }
 
+private fun Direction.dotProduct(x: Double, y: Double): Double = when(this) {
+    Direction.West -> x
+    Direction.NorthWest -> 0.70710 * x + 0.70710 * y
+    Direction.North -> y
+    Direction.NorthEast -> -0.70710 * x + 0.70710 * y
+    Direction.East -> -x
+    Direction.SouthEast -> -0.70710 * x - 0.70710 * y
+    Direction.South -> -y
+    Direction.SouthWest -> 0.70710 * x - 0.70710 * y
+}
+
 fun computeDirectionsFromDeltaPos(
     dx: Double,
     dy: Double,
@@ -68,6 +79,34 @@ fun computeDirectionsFromDeltaPos(
     }
 
     return scored.filter { it.first > 0.0 }.map { it.second }
+}
+
+fun computeBestDirectionFromDeltaPos(
+    dx: Double,
+    dy: Double,
+    threshold: Double,
+    candidates: Set<Direction>
+): Direction? {
+    val length = sqrt(dx * dx + dy * dy)
+    if(length < threshold || length == 0.0 || candidates.isEmpty()) return null
+
+    val dirX = -dx / length
+    val dirY = -dy / length
+    var bestDirection: Direction? = null
+    var bestScore = 0.0
+
+    // Direction.entries order intentionally matches computeDirectionsFromDeltaPos's stable
+    // tie-breaking, but avoids allocating and sorting lists for every touch-move event.
+    for(direction in Direction.entries) {
+        if(direction !in candidates) continue
+        val score = direction.dotProduct(dirX, dirY)
+        if(score > bestScore) {
+            bestScore = score
+            bestDirection = direction
+        }
+    }
+
+    return bestDirection
 }
 
 data class ComputedFlickData(

@@ -69,8 +69,12 @@ fun matchesKey(qualifiers: Set<KeyQualifier>, layout: String, keyboard: Keyboard
         is KeyQualifier.Layer -> it.layer == layer
     } }
 
-fun getLayer(qualifiers: Set<KeyQualifier>) =
-    qualifiers.filterIsInstance<KeyQualifier.Layer>().firstOrNull()?.layer ?: 0
+fun getLayer(qualifiers: Set<KeyQualifier>): Int {
+    for (qualifier in qualifiers) {
+        if (qualifier is KeyQualifier.Layer) return qualifier.layer
+    }
+    return 0
+}
 
 
 fun matchesHint(qualifiers: Set<KeyQualifier>, layout: String, hintLabel: String?, hintIcon: String?) =

@@ -19,6 +19,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +32,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.ANIMATE_BUBBLE
 import org.futo.inputmethod.latin.uix.AUDIO_FOCUS
@@ -44,7 +48,10 @@ import org.futo.inputmethod.latin.uix.OFFLINE_MODE
 import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.USE_PERSONAL_DICT
 import org.futo.inputmethod.latin.uix.USE_VAD_AUTOSTOP
+import org.futo.inputmethod.latin.uix.deferSetSetting
+import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.getSettingBlocking
+import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.UserSetting
@@ -180,9 +187,33 @@ private val languageCodes = whisperLanguages.map { it.first }
 @Composable
 private fun GroqApiKeySetting() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val currentKey = remember { mutableStateOf(context.getSettingBlocking(GROQ_API_KEY)) }
     var showKey by remember { mutableStateOf(false) }
     val savedToast = remember { mutableStateOf<Toast?>(null) }
+
+    LaunchedEffect(currentKey.value) {
+        delay(300L)
+        val value = currentKey.value
+        if (value != context.getSetting(GROQ_API_KEY)) {
+            context.setSetting(GROQ_API_KEY, value)
+            savedToast.value?.cancel()
+            Toast.makeText(context, "API key saved", Toast.LENGTH_SHORT).also {
+                savedToast.value = it
+                it.show()
+            }
+        }
+    }
+
+    DisposableEffect(context, lifecycleOwner, currentKey) {
+        onDispose {
+            savedToast.value?.cancel()
+            val value = currentKey.value
+            if (value != context.getSetting(GROQ_API_KEY)) {
+                lifecycleOwner.deferSetSetting(context, GROQ_API_KEY, value)
+            }
+        }
+    }
 
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
         Text(
@@ -201,12 +232,6 @@ private fun GroqApiKeySetting() {
                 value = currentKey.value,
                 onValueChange = { newValue ->
                     currentKey.value = newValue
-                    context.setSettingBlocking(GROQ_API_KEY.key, newValue)
-                    savedToast.value?.cancel()
-                    Toast.makeText(context, "API key saved", Toast.LENGTH_SHORT).also {
-                        savedToast.value = it
-                        it.show()
-                    }
                 },
                 placeholder = { Text("gsk_...") },
                 visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),

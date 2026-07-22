@@ -36,7 +36,7 @@ import org.futo.inputmethod.latin.common.StringUtils
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
 import org.futo.inputmethod.v2keyboard.Direction
 import org.futo.inputmethod.v2keyboard.KeyVisualStyle
-import org.futo.inputmethod.v2keyboard.computeDirectionsFromDeltaPos
+import org.futo.inputmethod.v2keyboard.computeBestDirectionFromDeltaPos
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -551,12 +551,12 @@ data class Key(
         if(flickKeys == null) {
             null
         } else {
-            val dirs = computeDirectionsFromDeltaPos(
+            computeBestDirectionFromDeltaPos(
                 dx = dx.toDouble(),
                 dy = dy.toDouble(),
-                threshold = (width / 3).toDouble()
+                threshold = (width / 3).toDouble(),
+                candidates = flickKeys.keys
             )
-            dirs.firstOrNull { flickKeys.contains(it) }
         }
     }.also {
         mFlickDirection = it
