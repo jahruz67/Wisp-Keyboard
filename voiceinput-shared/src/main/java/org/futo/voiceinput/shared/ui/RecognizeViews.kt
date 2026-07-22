@@ -64,6 +64,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clipToBounds
 import kotlin.math.min
+import kotlin.math.sqrt
 
 data class MicrophoneDeviceState(
     val bluetoothAvailable: Boolean,
@@ -89,13 +90,16 @@ fun AnimatedRecognizeCircle(
 
     val color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)
 
-    val minRadiusPx = with(LocalDensity.current) { 40.dp.toPx() }
-    val paddingPx = with(LocalDensity.current) { 12.dp.toPx() }
+    val minRadiusPx = with(LocalDensity.current) { 48.dp.toPx() }
+    val paddingPx = with(LocalDensity.current) { 8.dp.toPx() }
 
     Canvas(modifier = Modifier.fillMaxSize().clipToBounds()) {
         val maxAllowedRadius = (min(size.width, size.height) / 2.0f) - paddingPx
         val maxRadiusPx = maxOf(minRadiusPx, maxAllowedRadius)
-        val drawRadius = minRadiusPx + (maxRadiusPx - minRadiusPx) * animatedRadius
+        
+        // Square root response curve boosts average speaking volumes to fill most of the container area
+        val boostedRadius = sqrt(animatedRadius.toDouble()).toFloat()
+        val drawRadius = minRadiusPx + (maxRadiusPx - minRadiusPx) * boostedRadius
 
         drawCircle(color = color, radius = drawRadius)
     }
