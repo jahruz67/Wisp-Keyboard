@@ -1,24 +1,23 @@
 package org.futo.inputmethod.latin.uix.actions.translate
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,10 +34,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -48,9 +47,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlin.math.pow
@@ -71,8 +72,10 @@ import org.futo.inputmethod.latin.uix.settings.SettingsActivity
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
 import org.futo.voiceinput.shared.GroqRecognizer
 import org.futo.voiceinput.shared.types.MagnitudeState
-import org.futo.voiceinput.shared.ui.AnimatedRecognizeCircle
+import org.futo.voiceinput.shared.ui.InnerRecognize
+import org.futo.voiceinput.shared.ui.MicrophoneDeviceState
 import org.futo.voiceinput.shared.clearCommunicationDevice
+import org.futo.voiceinput.shared.isBluetoothAvailable
 import org.futo.voiceinput.shared.pauseMediaIfPlaying
 import org.futo.voiceinput.shared.resumeMedia
 import org.futo.voiceinput.shared.setCommunicationDevice
@@ -99,20 +102,6 @@ fun TranslateHeader(
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
         Spacer(Modifier.weight(1f))
 
         Box {
@@ -121,14 +110,14 @@ fun TranslateHeader(
                 color = Color(0xFF7A3E1D),
                 contentColor = Color.White,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
                     .clickable { showSrcMenu = true }
             ) {
                 Text(
                     text = srcLang.name,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
                 )
             }
             DropdownMenu(expanded = showSrcMenu, onDismissRequest = { showSrcMenu = false }) {
@@ -166,14 +155,14 @@ fun TranslateHeader(
                 color = Color(0xFF7A3E1D),
                 contentColor = Color.White,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
                     .clickable { showTgtMenu = true }
             ) {
                 Text(
                     text = tgtLang.name,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
                 )
             }
             DropdownMenu(expanded = showTgtMenu, onDismissRequest = { showTgtMenu = false }) {
@@ -280,7 +269,7 @@ fun TranslateContents(
         Spacer(Modifier.height(4.dp))
 
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(12.dp),
             color = LocalKeyboardScheme.current.keyboardContainer,
             contentColor = LocalKeyboardScheme.current.onKeyboardContainer,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFD49A76)),
@@ -307,7 +296,7 @@ fun TranslateContents(
                         onVoiceCancel = { voiceMode = false }
                     )
                 } else {
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(1f).heightIn(max = 48.dp)) {
                         ActionTextEditor(
                             text = textState,
                             placeholder = "Type text to translate...",
@@ -385,7 +374,8 @@ private fun VoiceInputBar(
     onVoiceCancel: () -> Unit
 ) {
     val context = LocalContext.current
-    var apiKey = context.getSetting(GROQ_API_KEY)
+    val apiKey = context.getSetting(GROQ_API_KEY)
+    val scope = rememberCoroutineScope()
 
     if (apiKey.isBlank()) {
         Box(modifier = Modifier
@@ -422,180 +412,192 @@ private fun VoiceInputBar(
         return
     }
 
-    var whisperModel by remember { mutableStateOf(context.getSetting(GROQ_WHISPER_MODEL)) }
-    var whisperLanguage by remember { mutableStateOf(context.getSetting(GROQ_WHISPER_LANGUAGE)) }
-    var aiModel by remember { mutableStateOf(context.getSetting(org.futo.inputmethod.latin.uix.GROQ_AI_MODEL)) }
+    val whisperModel = context.getSetting(GROQ_WHISPER_MODEL)
+    val whisperLanguage = context.getSetting(GROQ_WHISPER_LANGUAGE)
+    val aiModel = context.getSetting(org.futo.inputmethod.latin.uix.GROQ_AI_MODEL)
 
-    var isRecording by remember { mutableStateOf(false) }
     val magnitudeState = remember { mutableFloatStateOf(0.0f) }
-    var currentStatus by remember { mutableStateOf(MagnitudeState.NOT_TALKED_YET) }
+    val statusState = remember { mutableStateOf(MagnitudeState.NOT_TALKED_YET) }
+    val currentDeviceState = remember { mutableStateOf(
+        MicrophoneDeviceState(
+            bluetoothAvailable = false,
+            bluetoothActive = false,
+            setBluetooth = { },
+            deviceName = "",
+            bluetoothPreferredByUser = false
+        )
+    ) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var wasMediaPlaying by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        wasMediaPlaying = pauseMediaIfPlaying(context)
+    var stopRequested by remember { mutableStateOf(false) }
+    val audioBuffer = remember { mutableListOf<Float>() }
+    var recordingJob by remember { mutableStateOf<Job?>(null) }
 
-        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            currentStatus = MagnitudeState.MIC_MAY_BE_BLOCKED
+    fun startRecording() {
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            statusState.value = MagnitudeState.MIC_MAY_BE_BLOCKED
             errorMessage = "Please grant microphone permission to use voice input"
-            return@LaunchedEffect
+            return
         }
 
         val preferBluetooth = context.getSetting(PREFER_BLUETOOTH)
-        setCommunicationDevice(context, preferBluetooth)
+        val (bluetoothActive, deviceName) = setCommunicationDevice(context, preferBluetooth)
+        val bluetoothAvailable = isBluetoothAvailable(context)
 
-        try {
-            val sampleRate = 16000
-            val bufferSize = AudioRecord.getMinBufferSize(
-                sampleRate,
-                android.media.AudioFormat.CHANNEL_IN_MONO,
-                android.media.AudioFormat.ENCODING_PCM_16BIT
-            ).coerceAtLeast(4096)
+        currentDeviceState.value = MicrophoneDeviceState(
+            bluetoothAvailable = bluetoothAvailable,
+            bluetoothActive = bluetoothActive,
+            bluetoothPreferredByUser = preferBluetooth,
+            setBluetooth = { enable ->
+                context.setSettingBlocking(PREFER_BLUETOOTH.key, enable)
+                stopRequested = true
+                recordingJob?.cancel()
+                startRecording()
+            },
+            deviceName = deviceName
+        )
 
-            val recorder = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                sampleRate,
-                android.media.AudioFormat.CHANNEL_IN_MONO,
-                android.media.AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize
-            )
+        errorMessage = null
+        audioBuffer.clear()
+        stopRequested = false
+        val wasMediaPlaying = pauseMediaIfPlaying(context)
 
-            if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-                errorMessage = "Failed to initialize audio recorder"
-                return@LaunchedEffect
-            }
+        recordingJob = scope.launch(Dispatchers.Default) {
+            try {
+                val sampleRate = 16000
+                val bufferSize = AudioRecord.getMinBufferSize(
+                    sampleRate,
+                    android.media.AudioFormat.CHANNEL_IN_MONO,
+                    android.media.AudioFormat.ENCODING_PCM_16BIT
+                ).coerceAtLeast(4096)
 
-            currentStatus = MagnitudeState.NOT_TALKED_YET
-            magnitudeState.floatValue = 0.0f
-            isRecording = true
-            recorder.startRecording()
-
-            val shortBuffer = ShortArray(1600)
-            val audioBuffer = mutableListOf<Float>()
-            var totalSamples = 0
-            val maxSamples = sampleRate * 120
-            var hasTalked = false
-
-            while (totalSamples < maxSamples && isActive) {
-                yield()
-                val nRead = recorder.read(shortBuffer, 0, 1600, AudioRecord.READ_NON_BLOCKING)
-                if (nRead <= 0) { delay(50); continue }
-
-                var sumSq = 0.0
-                for (i in 0 until nRead) {
-                    val f = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
-                    audioBuffer.add(f)
-                    sumSq += f * f
-                }
-                totalSamples += nRead
-
-                val rms = sqrt(sumSq / nRead).toFloat()
-                if (rms > 0.01f) hasTalked = true
-                magnitudeState.floatValue = (1.0f - 0.1f.pow(12.0f * rms)).coerceIn(0f, 1f)
-                currentStatus = if (hasTalked) MagnitudeState.TALKING else MagnitudeState.NOT_TALKED_YET
-            }
-
-            recorder.stop()
-            recorder.release()
-            clearCommunicationDevice(context)
-
-            val result = withContext(Dispatchers.IO) {
-                GroqRecognizer.transcribe(
-                    apiKey = apiKey,
-                    audioData = audioBuffer.toFloatArray(),
-                    sampleRate = 16000,
-                    model = whisperModel,
-                    language = if (whisperLanguage == "auto") null else whisperLanguage
+                val recorder = AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    sampleRate,
+                    android.media.AudioFormat.CHANNEL_IN_MONO,
+                    android.media.AudioFormat.ENCODING_PCM_16BIT,
+                    bufferSize
                 )
-            }
 
-            val text = if (result.isSuccess) {
-                var v = result.getOrThrow().trim()
-                if (v.isNotBlank() && aiModel.isNotBlank() && aiModel != "none") {
-                    val enhanced = withContext(Dispatchers.IO) {
-                        GroqRecognizer.enhanceText(apiKey, v, aiModel)
+                if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+                    withContext(Dispatchers.Main) {
+                        errorMessage = "Failed to initialize audio recorder"
                     }
-                    enhanced.getOrNull() ?: v
-                } else v
-            } else {
-                throw result.exceptionOrNull() ?: Exception("Transcription failed")
-            }
+                    return@launch
+                }
 
-            isRecording = false
-            if (text.isNotBlank()) {
-                onVoiceDone(text)
-            } else {
-                errorMessage = "No speech detected"
+                withContext(Dispatchers.Main) {
+                    magnitudeState.floatValue = 0.0f
+                    statusState.value = MagnitudeState.NOT_TALKED_YET
+                }
+
+                recorder.startRecording()
+
+                val shortBuffer = ShortArray(1600)
+                var totalSamples = 0
+                val maxSamples = sampleRate * 120
+                var hasTalked = false
+
+                while (totalSamples < maxSamples && !stopRequested) {
+                    yield()
+                    val nRead = recorder.read(shortBuffer, 0, 1600, AudioRecord.READ_NON_BLOCKING)
+                    if (nRead <= 0) { delay(50); continue }
+
+                    var sumSq = 0.0
+                    for (i in 0 until nRead) {
+                        val f = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
+                        audioBuffer.add(f)
+                        sumSq += f * f
+                    }
+                    totalSamples += nRead
+
+                    val rms = sqrt(sumSq / nRead).toFloat()
+                    if (rms > 0.01f) hasTalked = true
+                    val magnitude = (1.0f - 0.1f.toDouble().pow(24.0 * rms)).toFloat()
+                    val state = if (hasTalked) MagnitudeState.TALKING else MagnitudeState.NOT_TALKED_YET
+
+                    withContext(Dispatchers.Main) {
+                        magnitudeState.floatValue = magnitude
+                        statusState.value = state
+                    }
+                }
+
+                recorder.stop()
+                recorder.release()
+                clearCommunicationDevice(context)
+
+                if (audioBuffer.isNotEmpty()) {
+                    val result = withContext(Dispatchers.IO) {
+                        GroqRecognizer.transcribe(
+                            apiKey = apiKey,
+                            audioData = audioBuffer.toFloatArray(),
+                            sampleRate = 16000,
+                            model = whisperModel,
+                            language = if (whisperLanguage == "auto") null else whisperLanguage
+                        )
+                    }
+
+                    val text = if (result.isSuccess) {
+                        var v = result.getOrThrow().trim()
+                        if (v.isNotBlank() && aiModel.isNotBlank() && aiModel != "none") {
+                            val enhanced = withContext(Dispatchers.IO) {
+                                GroqRecognizer.enhanceText(apiKey, v, aiModel)
+                            }
+                            enhanced.getOrNull() ?: v
+                        } else v
+                    } else {
+                        throw result.exceptionOrNull() ?: Exception("Transcription failed")
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        if (text.isNotBlank()) {
+                            onVoiceDone(text)
+                        } else {
+                            errorMessage = "No speech detected"
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    errorMessage = e.message ?: "Recording failed"
+                }
+            } finally {
+                if (wasMediaPlaying) resumeMedia(context)
             }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            if (isActive) {
-                isRecording = false
-                errorMessage = e.message ?: "Recording failed"
-            }
-        } finally {
-            isRecording = false
-            if (wasMediaPlaying) resumeMedia(context)
         }
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+    LaunchedEffect(Unit) {
+        startRecording()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .clickable(
+                enabled = true,
+                onClick = { stopRequested = true },
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.size(64.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            AnimatedRecognizeCircle(
-                magnitude = magnitudeState,
-                alpha = 0.55f
-            )
-            Icon(
-                painter = painterResource(R.drawable.mic_fill),
-                contentDescription = stringResource(R.string.action_voice_input_title),
-                modifier = Modifier.size(36.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
-
-        Text(
-            text = when (currentStatus) {
-                MagnitudeState.NOT_TALKED_YET -> stringResource(org.futo.voiceinput.shared.R.string.try_saying_something)
-                MagnitudeState.TALKING -> stringResource(org.futo.voiceinput.shared.R.string.listening)
-                MagnitudeState.MIC_MAY_BE_BLOCKED -> stringResource(org.futo.voiceinput.shared.R.string.no_audio_detected_is_your_microphone_blocked)
-            },
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
         if (errorMessage != null) {
-            Surface(
-                color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-
-        IconButton(
-            onClick = onVoiceCancel,
-            modifier = Modifier.size(28.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Cancel",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurface
+            Text(
+                text = errorMessage!!,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(16.dp)
+            )
+        } else {
+            InnerRecognize(
+                magnitude = magnitudeState,
+                state = statusState,
+                device = currentDeviceState
             )
         }
     }
