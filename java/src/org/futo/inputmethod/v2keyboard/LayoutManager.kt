@@ -26,6 +26,7 @@ data class Mappings(
 
 object LayoutManager {
     private var layoutsById: Map<String, LazyKeyboard>? = null
+    private var allLayoutNames: List<String>? = null
     private var localeToLayoutsMappings: Map<Locale, List<String>>? = null
     private var localeNames: Map<Locale, Map<Locale, String>>? = null
     private var initialized = false
@@ -66,6 +67,7 @@ object LayoutManager {
             val keyboard = LazyKeyboard(path)
             keyboard.filename to keyboard
         }
+        allLayoutNames = layoutsById!!.keys.toList()
     }
 
     private fun ensureInitialized() {
@@ -97,9 +99,7 @@ object LayoutManager {
 
     fun getAllLayoutNames(context: Context): List<String> {
         ensureInitialized()
-        return getAllLayoutPaths(context.assets).map {
-            it.split("/").last().split(".yaml").first()
-        }.filter { it != "names" }
+        return allLayoutNames!!
     }
 
     private val unexceptionalLocales = mutableSetOf<Locale>()
@@ -183,8 +183,9 @@ fun parseKeyboardYamlString(yamlString: String): Keyboard {
 internal class LazyKeyboard(
     val path: String
 ) {
-    val filename = path.split("/").last().split(".yaml").first()
-    var keyboard: Keyboard? = null
+    val filename = path.substringAfterLast('/').substringBeforeLast('.')
+    @Volatile
+    private var keyboard: Keyboard? = null
 
     private fun load(context: Context): Keyboard = try {
         parseKeyboardYaml(context, path).apply {
@@ -202,8 +203,8 @@ internal class LazyKeyboard(
     }
 
     fun get(context: Context): Keyboard {
-        return keyboard ?: run {
-            load(context).also {
+        return keyboard ?: synchronized(this) {
+            keyboard ?: load(context).also {
                 keyboard = it
             }
         }

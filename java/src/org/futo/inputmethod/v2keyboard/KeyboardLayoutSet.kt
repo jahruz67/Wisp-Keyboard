@@ -60,10 +60,11 @@ internal fun EditorInfo.getPrivateImeOptions(): Map<String, String> {
 
     try {
         imeOptions.split(",").forEach { option ->
-            if (option.contains('=') && option.split('=').size == 2) {
-                val (key, value) = option.split("=")
-                options[key.trim()] = value.trim()
-            }
+            val separator = option.indexOf('=')
+            if (separator <= 0 || option.indexOf('=', separator + 1) >= 0) return@forEach
+
+            options[option.substring(0, separator).trim()] =
+                option.substring(separator + 1).trim()
         }
     } catch(e: Exception) {
         e.printStackTrace()
@@ -72,8 +73,26 @@ internal fun EditorInfo.getPrivateImeOptions(): Map<String, String> {
     return options
 }
 
+private fun EditorInfo.getPrivateImeOption(name: String): String? {
+    val imeOptions = privateImeOptions ?: return null
+    var start = 0
+
+    while (start < imeOptions.length) {
+        val end = imeOptions.indexOf(',', start).let { if (it < 0) imeOptions.length else it }
+        val separator = imeOptions.indexOf('=', start)
+        val nextSeparator = imeOptions.indexOf('=', separator + 1)
+        if (separator in (start + 1) until end && nextSeparator !in (separator + 1) until end) {
+            val key = imeOptions.substring(start, separator).trim()
+            if (key == name) return imeOptions.substring(separator + 1, end).trim()
+        }
+        start = end + 1
+    }
+
+    return null
+}
+
 fun getPrimaryLayoutOverride(editorInfo: EditorInfo?): String? {
-    return editorInfo?.getPrivateImeOptions()?.get("org.futo.inputmethod.latin.ForceLayout")
+    return editorInfo?.getPrivateImeOption("org.futo.inputmethod.latin.ForceLayout")
 }
 
 data class KeyboardLayoutSetV2Params(
@@ -131,7 +150,11 @@ Data: $it
         }
     }
 
-    val errorLayout = LayoutManager.getLayout(context, "error")
+    // Most input sessions only use the alphabet layout. Keep fallback and secondary layouts lazy
+    // so opening the keyboard does not synchronously parse every YAML layout in the set.
+    val errorLayout by lazy(LazyThreadSafetyMode.NONE) {
+        LayoutManager.getLayout(context, "error")
+    }
 
     val customLayout = forcedCustomLayout?.let {
         val x = try {
@@ -153,12 +176,7 @@ Layout: $it
             errorLayout
         }
 
-        Log.d("KeyboardLayoutSet", "$x")
         x
-    }
-
-    init {
-        Log.d("KeyboardLayoutSet", "$forcedCustomLayout, ${privateParams["org.futo.inputmethod.latin.ForceCustomLayoutYamlB64"]}, $privateParams, ${editorInfo.privateImeOptions}")
     }
 
     // Necessary for Java API
@@ -189,12 +207,24 @@ Layout: $layoutName
     val layoutName = customLayout?.let { "custompreview" } ?: forcedLayout ?: params.keyboardLayoutSet
     val mainLayout = customLayout ?: safeGetLayout(layoutName)
 
-    val symbolsLayout = safeGetLayout(mainLayout.layoutSetOverrides.symbols)
-    val symbolsShiftedLayout = safeGetLayout(mainLayout.layoutSetOverrides.symbolsShifted)
-    val numberLayout = safeGetLayout(mainLayout.layoutSetOverrides.number)
-    val phoneLayout = safeGetLayout(mainLayout.layoutSetOverrides.phone)
-    val phoneSymbolsLayout = safeGetLayout(mainLayout.layoutSetOverrides.phoneShifted)
-    val numberBasicLayout = safeGetLayout("number_basic")
+    val symbolsLayout by lazy(LazyThreadSafetyMode.NONE) {
+        safeGetLayout(mainLayout.layoutSetOverrides.symbols)
+    }
+    val symbolsShiftedLayout by lazy(LazyThreadSafetyMode.NONE) {
+        safeGetLayout(mainLayout.layoutSetOverrides.symbolsShifted)
+    }
+    val numberLayout by lazy(LazyThreadSafetyMode.NONE) {
+        safeGetLayout(mainLayout.layoutSetOverrides.number)
+    }
+    val phoneLayout by lazy(LazyThreadSafetyMode.NONE) {
+        safeGetLayout(mainLayout.layoutSetOverrides.phone)
+    }
+    val phoneSymbolsLayout by lazy(LazyThreadSafetyMode.NONE) {
+        safeGetLayout(mainLayout.layoutSetOverrides.phoneShifted)
+    }
+    val numberBasicLayout by lazy(LazyThreadSafetyMode.NONE) {
+        safeGetLayout("number_basic")
+    }
 
     private fun getSubKeyboard(element: KeyboardLayoutElement): org.futo.inputmethod.v2keyboard.Keyboard? {
         return mainLayout.subKeyboards[element.kind]?.let {
@@ -205,54 +235,35 @@ Layout: $layoutName
         }
     }
 
-    val elements = mapOf(
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Alphabet0,
-            page = KeyboardLayoutPage.Base
-        ) to mainLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Alphabet0,
-            page = KeyboardLayoutPage.Shifted
-        ) to mainLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Symbols,
-            page = KeyboardLayoutPage.Base
-        ) to symbolsLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Symbols,
-            page = KeyboardLayoutPage.Shifted
-        ) to symbolsShiftedLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Phone,
-            page = KeyboardLayoutPage.Base
-        ) to phoneLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Phone,
-            page = KeyboardLayoutPage.Shifted
-        ) to phoneSymbolsLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.Number,
-            page = KeyboardLayoutPage.Base
-        ) to numberLayout,
-
-        KeyboardLayoutElement(
-            kind = KeyboardLayoutKind.NumberBasic,
-            page = KeyboardLayoutPage.Base
-        ) to numberBasicLayout,
-    )
+    private fun getBuiltInLayout(element: KeyboardLayoutElement): org.futo.inputmethod.v2keyboard.Keyboard? {
+        val normalized = element.normalize()
+        return when(normalized.kind) {
+            KeyboardLayoutKind.Alphabet0 -> when(normalized.page) {
+                KeyboardLayoutPage.Base, KeyboardLayoutPage.Shifted -> mainLayout
+                else -> null
+            }
+            KeyboardLayoutKind.Symbols -> when(normalized.page) {
+                KeyboardLayoutPage.Base -> symbolsLayout
+                KeyboardLayoutPage.Shifted -> symbolsShiftedLayout
+                else -> null
+            }
+            KeyboardLayoutKind.Phone -> when(normalized.page) {
+                KeyboardLayoutPage.Base -> phoneLayout
+                KeyboardLayoutPage.Shifted -> phoneSymbolsLayout
+                else -> null
+            }
+            KeyboardLayoutKind.Number -> if(normalized.page == KeyboardLayoutPage.Base) numberLayout else null
+            KeyboardLayoutKind.NumberBasic -> if(normalized.page == KeyboardLayoutPage.Base) numberBasicLayout else null
+            else -> null
+        }
+    }
 
     private fun getKeyboardLayoutForElement(element: KeyboardLayoutElement): org.futo.inputmethod.v2keyboard.Keyboard {
-        return getSubKeyboard(element) ?: elements[element.normalize()] ?: run {
+        return getSubKeyboard(element) ?: getBuiltInLayout(element) ?: run {
             // If this is an alt layout, try to get the matching alt
             element.page.altIdx?.let { altIdx ->
                 val baseElement = element.copy(page = KeyboardLayoutPage.Base)
-                val baseLayout = elements[baseElement]
+                val baseLayout = getBuiltInLayout(baseElement)
                 baseLayout?.altPages?.getOrNull(altIdx)
             }?.let {
                 mainLayout.copy(rows = it)
@@ -260,7 +271,7 @@ Layout: $layoutName
         } ?: run {
             // If all else fails, show the error layout
             BugViewerState.pushBug(BugInfo("KeyboardLayoutSet",
-                "Keyboard $layoutName does not have element $element. Available elements: ${elements.keys}"))
+                "Keyboard $layoutName does not have element $element"))
             errorLayout
         }
     }
@@ -282,7 +293,12 @@ Layout: $layoutName
     private val singularRowHeight: Double
         get() = params.computedSize.singleRowHeight.toDouble()
 
-    fun getKeyboard(element: KeyboardLayoutElement): Keyboard {
+    private val builtKeyboards = mutableMapOf<KeyboardLayoutElement, Keyboard>()
+
+    fun getKeyboard(element: KeyboardLayoutElement): Keyboard =
+        builtKeyboards.getOrPut(element) { buildKeyboard(element) }
+
+    private fun buildKeyboard(element: KeyboardLayoutElement): Keyboard {
 
         val multilingualTypingLocales = forcedMultilingualTypingLanguages ?: params.multilingualTypingLocales
 

@@ -653,9 +653,7 @@ class UixManager(private val latinIME: LatinIME) {
     private fun onActionActivatedInternal(rawAction: Action) {
         resizers.hideResizer()
 
-        val action = runBlocking {
-            ActionRegistry.getActionOverride(latinIME, rawAction)
-        }
+        val action = ActionRegistry.getActionOverride(latinIME, rawAction)
 
         if (action.windowImpl != null) {
             enterActionWindowView(action)
@@ -667,9 +665,7 @@ class UixManager(private val latinIME: LatinIME) {
     }
 
     private fun onActionAltActivatedInternal(rawAction: Action) {
-        val action = runBlocking {
-            ActionRegistry.getActionOverride(latinIME, rawAction)
-        }
+        val action = ActionRegistry.getActionOverride(latinIME, rawAction)
 
         action.altPressImpl?.invoke(keyboardManagerForAction, persistentStates[action])
     }

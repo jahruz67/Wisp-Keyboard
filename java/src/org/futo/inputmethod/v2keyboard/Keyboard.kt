@@ -316,6 +316,10 @@ data class Keyboard(
 ) {
     var id: String = ""
 
+    // Effective rows are derived entirely from this immutable layout and the requested number-row
+    // style. Reuse them between sizing and keyboard construction instead of copying the rows twice.
+    private val effectiveRowsCache = mutableMapOf<Int, List<Row>>()
+
     private fun ensureRowsValid(rows: List<Row>) {
         assert(rows.first().isNumberRow) { "The first row in a keyboard must be the number row" }
         assert(rows.last().isBottomRow)  { "The last row in a keyboard must be the bottom row" }
@@ -324,43 +328,46 @@ data class Keyboard(
         assert(rows.count { it.isLetterRow } in 1..8) { "Keyboard must contain between 1 and 8 letter rows" }
     }
 
-    fun getEffectiveRows(numberRowMode: Int) = rows.toMutableList().apply {
-        if(find { it.isNumberRow } == null) {
-            add(0, when(numberRowMode) {
-                Settings.NUMBER_ROW_MODE_CLASSIC -> DefaultNumberRowClassic
-                else -> DefaultNumberRow
-            })
-        }
-
-        if(find { it.isBottomRow } == null) {
-            // If action row is not explicitly defined, shift and delete are implicitly added to last row
-            // (unless a row has explicitly defined shift or delete key)
-
-            if(!any {
-                it.isLetterRow && it.letters != null && (
-                        it.letters.contains(TemplateShiftKey)
-                                || it.letters.contains(TemplateDeleteKey))
-            }) {
-                val ultimateRow = removeAt(size - 1)
-                assert(ultimateRow.isLetterRow)
-
-                val updatedRow = ultimateRow.copy(
-                    letters = ultimateRow.letters!!.toMutableList().apply {
-                        add(0, TemplateShiftKey)
-                        add(TemplateDeleteKey)
-                    }
-                )
-
-                add(updatedRow)
+    @Synchronized
+    fun getEffectiveRows(numberRowMode: Int): List<Row> = effectiveRowsCache.getOrPut(numberRowMode) {
+        rows.toMutableList().apply {
+            if(find { it.isNumberRow } == null) {
+                add(0, when(numberRowMode) {
+                    Settings.NUMBER_ROW_MODE_CLASSIC -> DefaultNumberRowClassic
+                    else -> DefaultNumberRow
+                })
             }
 
+            if(find { it.isBottomRow } == null) {
+                // If action row is not explicitly defined, shift and delete are implicitly added to last row
+                // (unless a row has explicitly defined shift or delete key)
 
-            // Add default bottom row
-            add(DefaultBottomRow)
-        }
+                if(!any {
+                    it.isLetterRow && it.letters != null && (
+                            it.letters.contains(TemplateShiftKey)
+                                    || it.letters.contains(TemplateDeleteKey))
+                }) {
+                    val ultimateRow = removeAt(size - 1)
+                    assert(ultimateRow.isLetterRow)
 
-        ensureRowsValid(this)
-    }.toList()
+                    val updatedRow = ultimateRow.copy(
+                        letters = ultimateRow.letters!!.toMutableList().apply {
+                            add(0, TemplateShiftKey)
+                            add(TemplateDeleteKey)
+                        }
+                    )
+
+                    add(updatedRow)
+                }
+
+
+                // Add default bottom row
+                add(DefaultBottomRow)
+            }
+
+            ensureRowsValid(this)
+        }.toList()
+    }
 
     fun build(context: Context, params: KeyboardParams, layoutParams: LayoutParams): org.futo.inputmethod.keyboard.Keyboard {
         val engine = LayoutEngine(context, this, params, layoutParams)
