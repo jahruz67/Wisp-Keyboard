@@ -4,6 +4,7 @@ import android.Manifest
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,9 +34,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,27 +51,37 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sqrt
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionTextEditor
 import org.futo.inputmethod.latin.uix.ActionWindow
 import org.futo.inputmethod.latin.uix.GROQ_API_KEY
+import org.futo.inputmethod.latin.uix.GROQ_WHISPER_LANGUAGE
 import org.futo.inputmethod.latin.uix.GROQ_WHISPER_MODEL
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
+import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
+import org.futo.inputmethod.latin.uix.settings.SettingsActivity
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
 import org.futo.voiceinput.shared.GroqRecognizer
+import org.futo.voiceinput.shared.types.MagnitudeState
+import org.futo.voiceinput.shared.clearCommunicationDevice
 import org.futo.voiceinput.shared.pauseMediaIfPlaying
 import org.futo.voiceinput.shared.resumeMedia
-import org.futo.voiceinput.shared.ui.RecognizeMicError
+import org.futo.voiceinput.shared.setCommunicationDevice
 
 @Composable
 fun TranslateHeader(
@@ -246,9 +256,7 @@ fun TranslateContents(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
+        modifier = Modifier.fillMaxWidth()
     ) {
         TranslateHeader(
             sourceLangCode = sourceLang,
@@ -339,7 +347,7 @@ fun TranslateContents(
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Mic,
+                                painter = painterResource(R.drawable.mic_fill),
                                 contentDescription = stringResource(R.string.action_voice_input_title),
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onSurface
@@ -381,50 +389,66 @@ private fun VoiceInputBar(
     onVoiceCancel: () -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    val lifeCycleScope = remember { lifecycleOwner.lifecycleScope }
+    val scope = rememberCoroutineScope()
     var apiKey = context.getSetting(GROQ_API_KEY)
 
     if (apiKey.isBlank()) {
         Box(modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
-            RecognizeMicError(
-                openSettings = {
-                    org.futo.inputmethod.latin.uix.settings.SettingsActivity.openToNavDest(
-                        context, "voiceInput"
+            .padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    painter = painterResource(R.drawable.mic_fill),
+                    contentDescription = stringResource(R.string.action_voice_input_title),
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.action_voice_input_open_settings_button_to_grant_microphone_permission),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                IconButton(
+                    onClick = { SettingsActivity.openToNavDest(context, "voiceInput") }
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.mic_fill),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
-            )
+            }
         }
         return
     }
 
-    var whisperModel = remember { mutableStateOf(context.getSetting(GROQ_WHISPER_MODEL)) }
-    var whisperLanguage = remember { mutableStateOf(context.getSetting(GROQ_WHISPER_LANGUAGE)) }
-    var aiModel = context.getSetting(org.futo.inputmethod.latin.uix.GROQ_AI_MODEL)
+    var whisperModel by remember { mutableStateOf(context.getSetting(GROQ_WHISPER_MODEL)) }
+    var whisperLanguage by remember { mutableStateOf(context.getSetting(GROQ_WHISPER_LANGUAGE)) }
+    var aiModel by remember { mutableStateOf(context.getSetting(org.futo.inputmethod.latin.uix.GROQ_AI_MODEL)) }
 
-    var isRecording by remember { mutableStateOf(true) }
+    var isRecording by remember { mutableStateOf(false) }
     var magnitude by remember { mutableFloatStateOf(0.0f) }
-    var status by remember { mutableLongStateOf(org.futo.voiceinput.shared.types.MagnitudeState.NOT_TALKED_YET.toLong()) }
+    var currentStatus by remember { mutableStateOf(MagnitudeState.NOT_TALKED_YET) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var wasMediaPlaying by remember { mutableStateOf(false) }
-
-    fun magState() = org.futo.voiceinput.shared.types.MagnitudeState.entries.getOrNull(status.toInt())
-        ?: org.futo.voiceinput.shared.types.MagnitudeState.NOT_TALKED_YET
+    val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
 
     LaunchedEffect(Unit) {
-        isRecording = false
         wasMediaPlaying = pauseMediaIfPlaying(context)
 
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            status = org.futo.voiceinput.shared.types.MagnitudeState.MIC_MAY_BE_BLOCKED.toLong()
-            errorMessage = context.getString(org.futo.voiceinput.shared.R.string.grant_microphone_permission_to_use_voice_input)
+            currentStatus = MagnitudeState.MIC_MAY_BE_BLOCKED
+            errorMessage = "Please grant microphone permission to use voice input"
             return@LaunchedEffect
         }
 
-        val preferBluetooth = context.getSetting(org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH)
-        org.futo.voiceinput.shared.setCommunicationDevice(context, preferBluetooth)
+        val preferBluetooth = context.getSetting(PREFER_BLUETOOTH)
+        setCommunicationDevice(context, preferBluetooth)
 
         try {
             val sampleRate = 16000
@@ -447,7 +471,7 @@ private fun VoiceInputBar(
                 return@LaunchedEffect
             }
 
-            status = org.futo.voiceinput.shared.types.MagnitudeState.NOT_TALKED_YET.toLong()
+            currentStatus = MagnitudeState.NOT_TALKED_YET
             magnitude = 0.0f
             isRecording = true
             recorder.startRecording()
@@ -473,22 +497,21 @@ private fun VoiceInputBar(
 
                 val rms = sqrt(sumSq / nRead).toFloat()
                 if (rms > 0.01f) hasTalked = true
-                magnitude = (1.0f - 0.1f.toDouble().pow(12.0 * rms)).toFloat().coerceIn(0f, 1f)
-                status = if (hasTalked) org.futo.voiceinput.shared.types.MagnitudeState.TALKING.toLong()
-                         else org.futo.voiceinput.shared.types.MagnitudeState.NOT_TALKED_YET.toLong()
+                magnitude = (1.0f - 0.1f.pow(12.0f * rms)).coerceIn(0f, 1f)
+                currentStatus = if (hasTalked) MagnitudeState.TALKING else MagnitudeState.NOT_TALKED_YET
             }
 
             recorder.stop()
             recorder.release()
-            org.futo.voiceinput.shared.clearCommunicationDevice(context)
+            clearCommunicationDevice(context)
 
             val result = withContext(Dispatchers.IO) {
                 GroqRecognizer.transcribe(
                     apiKey = apiKey,
                     audioData = audioBuffer.toFloatArray(),
                     sampleRate = 16000,
-                    model = whisperModel.value,
-                    language = if (whisperLanguage.value == "auto") null else whisperLanguage.value
+                    model = whisperModel,
+                    language = if (whisperLanguage == "auto") null else whisperLanguage
                 )
             }
 
@@ -524,94 +547,81 @@ private fun VoiceInputBar(
     }
 
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (errorMessage != null) {
-            Surface(
-                color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(10.dp),
-                    textAlign = TextAlign.Center
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-        }
-
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                if (isRecording && magnitude > 0.001f) {
-                    Canvas(modifier = Modifier.fillMaxWidth()) {
-                        val boost = sqrt(magnitude.toDouble().coerceIn(0.0, 1.0)).toFloat()
-                        val d = size.minDimension
-                        val minR = 24.dp.toPx()
-                        val maxR = min(d / 2f, 34.dp.toPx())
-                        val r = minR + (maxR - minR) * boost
-                        drawCircle(
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                            radius = r,
-                            center = Offset(d / 2f, d / 2f)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier.size(72.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isRecording && magnitude > 0.001f && currentStatus != MagnitudeState.MIC_MAY_BE_BLOCKED) {
+                        Canvas(modifier = Modifier.fillMaxWidth()) {
+                            val boost = sqrt(magnitude.toDouble().coerceIn(0.0, 1.0)).toFloat()
+                            val d = size.minDimension
+                            val minR = 24.dp.toPx()
+                            val maxR = min(d / 2f, 34.dp.toPx())
+                            val r = minR + (maxR - minR) * boost
+                            drawCircle(
+                                color = primaryContainerColor.copy(alpha = 0.35f),
+                                radius = r,
+                                center = Offset(d / 2f, d / 2f)
+                            )
+                        }
+                    }
+                    Icon(
+                        painter = painterResource(R.drawable.mic_fill),
+                        contentDescription = stringResource(R.string.action_voice_input_title),
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                if (errorMessage != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            text = errorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                Text(
+                    text = when (currentStatus) {
+                        MagnitudeState.NOT_TALKED_YET -> stringResource(org.futo.voiceinput.shared.R.string.try_saying_something)
+                        MagnitudeState.TALKING -> stringResource(org.futo.voiceinput.shared.R.string.listening)
+                        MagnitudeState.MIC_MAY_BE_BLOCKED -> stringResource(org.futo.voiceinput.shared.R.string.no_audio_detected_is_your_microphone_blocked)
+                    },
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
             }
 
-            Spacer(Modifier.width(16.dp))
-
-            Text(
-                text = when (magState()) {
-                    org.futo.voiceinput.shared.types.MagnitudeState.NOT_TALKED_YET ->
-                        stringResource(R.string.try_saying_something)
-                    org.futo.voiceinput.shared.types.MagnitudeState.TALKING ->
-                        stringResource(R.string.listening)
-                    org.futo.voiceinput.shared.types.MagnitudeState.MIC_MAY_BE_BLOCKED ->
-                        stringResource(R.string.no_audio_detected_is_your_microphone_blocked)
-                },
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f)
-            )
-
-            Spacer(Modifier.width(16.dp))
-
-            IconButton(onClick = onVoiceCancel) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Cancel",
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onSurface
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.action_voice_input_title),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-
-            if (errorMessage != null) {
-                IconButton(onClick = {
-                    errorMessage = null
-                    isRecording = true
-                    lifeCycleScope.launch {
-                        delay(100)
-                    }
-                }) {
+                Spacer(Modifier.height(4.dp))
+                IconButton(onClick = onVoiceCancel) {
                     Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Retry",
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel",
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
