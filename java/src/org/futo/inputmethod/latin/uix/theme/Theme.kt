@@ -2,7 +2,6 @@
 
 package org.futo.inputmethod.latin.uix.theme
 
-import android.app.Activity
 import android.content.Context
 import android.graphics.Typeface
 import android.os.Build
@@ -23,6 +22,7 @@ import org.futo.inputmethod.latin.uix.KeyboardColorScheme
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
 import org.futo.inputmethod.latin.uix.THEME_KEY
 import org.futo.inputmethod.latin.uix.actions.compatEmojiTypeface
+import org.futo.inputmethod.latin.uix.findActivity
 import org.futo.inputmethod.latin.uix.settings.useDataStoreValue
 import kotlin.math.sqrt
 
@@ -55,7 +55,7 @@ fun StatusBarColorSetter() {
     val backgroundColor = MaterialTheme.colorScheme.background
     val context = LocalContext.current
     LaunchedEffect(backgroundColor) {
-        applyWindowColors((context as Activity).window, backgroundColor.toArgb(), statusBar = false)
+        applyWindowColors(findActivity(context)!!.window, backgroundColor.toArgb(), statusBar = false)
     }
 }
 

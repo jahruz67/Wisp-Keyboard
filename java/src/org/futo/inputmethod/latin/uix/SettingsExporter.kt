@@ -48,8 +48,6 @@ import org.futo.inputmethod.latin.uix.actions.clipboard.clipboardDir
 import org.futo.inputmethod.latin.uix.actions.clipboard.clipboardFile
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
-import org.futo.inputmethod.latin.uix.settings.SettingsActivity
-import org.futo.inputmethod.latin.uix.settings.pages.modelmanager.findSettingsActivity
 import org.futo.inputmethod.latin.uix.theme.ZipThemes
 import org.futo.inputmethod.latin.xlm.ModelPaths
 import org.json.JSONArray
@@ -477,8 +475,7 @@ object SettingsExporter {
             putExtra(Intent.EXTRA_TITLE, defaultFileName)
         }
 
-        val activity: SettingsActivity = findSettingsActivity(context)
-        activity.startActivityForResult(intent, EXPORT_SETTINGS_REQUEST)
+        findActivity(context)!!.startActivityForResult(intent, EXPORT_SETTINGS_REQUEST)
     }
 
     fun triggerImportSettings(context: Context) {
@@ -486,7 +483,7 @@ object SettingsExporter {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/octet-stream"
         }
-        (context as Activity).startActivityForResult(intent, IMPORT_SETTINGS_REQUEST)
+        findActivity(context)!!.startActivityForResult(intent, IMPORT_SETTINGS_REQUEST)
     }
 
     data class CfgFileMetadata(
@@ -525,7 +522,7 @@ object SettingsExporter {
     @Composable
     fun ExportingMenu(navController: NavHostController = rememberNavController()) {
         val context = LocalContext.current
-        val activity = remember { findSettingsActivity(context) }
+        val activity = remember { findSettingsActivity(context)!! }
         val triggered = remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {

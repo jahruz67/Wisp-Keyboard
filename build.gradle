@@ -321,6 +321,7 @@ android {
     }
 
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
@@ -435,6 +436,8 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.7.1'
 
+    implementation 'com.akuleshov7:ktoml-core:0.7.1'
+
     //def work_version = "2.9.0"
     //implementation "androidx.work:work-runtime-ktx:$work_version"
     //implementation "androidx.work:work-runtime:$work_version"
@@ -454,6 +457,8 @@ dependencies {
     // End for RIME
 
     implementation files('libs/futo-swipe-release.aar')
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
