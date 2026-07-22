@@ -304,6 +304,7 @@ fun TranslateContents(
                     ActionTextEditor(
                         text = textState,
                         multiline = true,
+                        centerVertically = keyboardShown,
                         placeholder = "Type text to translate...",
                         autofocus = true,
                         modifier = if (keyboardShown) {

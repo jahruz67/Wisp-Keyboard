@@ -175,6 +175,7 @@ class ActionEditText(
 private fun GenericEditTextCompose(
     text: MutableState<String>,
     multiline: Boolean,
+    centerVertically: Boolean,
     textSize: TextUnit,
     placeholder: String?,
     autocorrect: Boolean,
@@ -237,7 +238,7 @@ private fun GenericEditTextCompose(
 
             if (multiline) {
                 minHeight = height.toInt()
-                gravity = Gravity.TOP or Gravity.START
+                gravity = (if (centerVertically) Gravity.CENTER_VERTICAL else Gravity.TOP) or Gravity.START
                 setHorizontallyScrolling(false)
                 isSingleLine = false
             } else {
@@ -319,6 +320,7 @@ private fun GenericEditTextCompose(
 fun ActionTextEditor(
     text: MutableState<String>,
     multiline: Boolean = false,
+    centerVertically: Boolean = false,
     textSize: TextUnit = 16.sp,
     typeface: Typeface? = null,
     autocorrect: Boolean = false,
@@ -334,6 +336,7 @@ fun ActionTextEditor(
     GenericEditTextCompose(
         text = text,
         multiline = multiline,
+        centerVertically = centerVertically,
         textSize = textSize,
         typeface = typeface,
         autocorrect = autocorrect,
@@ -384,6 +387,7 @@ fun SettingsTextEdit(
             GenericEditTextCompose(
                 text = text,
                 multiline = multiline,
+                centerVertically = false,
                 textSize = textSize,
                 placeholder = placeholder,
                 autocorrect = autocorrect,
