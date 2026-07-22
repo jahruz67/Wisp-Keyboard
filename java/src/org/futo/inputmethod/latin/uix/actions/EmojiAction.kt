@@ -966,7 +966,7 @@ class PersistentEmojiState : PersistentActionState {
         @JvmStatic
         fun getTranslationForLocale(locale: Locale): EmojiTranslations? {
             if(locale.language == "en") {
-                if("en_merged" in loadedTranslations) return loadedTranslations["en_merged"]
+                if(loadedTranslations.containsKey("en_merged")) return loadedTranslations["en_merged"]
 
                 val fromUnicode = loadedTranslations["en"] ?: return null
                 val fromGemoji = loadedTranslations["en_gemoji"] ?: return null
@@ -983,7 +983,7 @@ class PersistentEmojiState : PersistentActionState {
             if(locales.size == 1) return getTranslationForLocale(locales[0])
 
             val key = locales.joinToString { it.language }
-            if(key in loadedTranslations) return loadedTranslations[key]
+            if(loadedTranslations.containsKey(key)) return loadedTranslations[key]
 
             val merged = locales.fold(EmojiTranslations(emptyMap())) { t, l ->
                 t + (getTranslationForLocale(l) ?: return null)
