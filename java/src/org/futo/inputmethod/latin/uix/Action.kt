@@ -132,6 +132,10 @@ abstract class ActionWindow {
     open val fixedWindowHeight: Dp?
         get() = null
 
+    /** Optional compact height used while the action is shown above the keyboard. */
+    open val fixedWindowHeightWhenKeyboardShown: Dp?
+        get() = fixedWindowHeight
+
     @Composable
     abstract fun windowName(): String
 

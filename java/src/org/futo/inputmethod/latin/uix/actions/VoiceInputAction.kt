@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +50,7 @@ import org.futo.inputmethod.latin.uix.GROQ_API_KEY
 import org.futo.inputmethod.latin.uix.GROQ_WHISPER_LANGUAGE
 import org.futo.inputmethod.latin.uix.GROQ_WHISPER_MODEL
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
+import org.futo.inputmethod.latin.uix.OFFLINE_MODE
 import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.PersistentActionState
 import org.futo.inputmethod.latin.uix.ResourceHelper
@@ -140,7 +144,8 @@ class VoiceInputPersistentState(val manager: KeyboardManagerForAction) : Persist
 
 private class VoiceInputActionWindow(
     val manager: KeyboardManagerForAction, val state: VoiceInputPersistentState,
-    val model: ModelLoader, val locales: List<Locale>
+    val model: ModelLoader, val locales: List<Locale>,
+    val resultHandler: ((String) -> Unit)? = null
 ) : ActionWindow(), RecognizerViewListener {
     val context = manager.getContext()
 
@@ -219,7 +224,7 @@ private class VoiceInputActionWindow(
         recognizerView.start()
     }
 
-    private var inputTransaction = manager.createInputTransaction()
+    private var inputTransaction = if (resultHandler == null) manager.createInputTransaction() else null
 
     @Composable
     private fun ModelDownloader(modelException: ModelDoesNotExistException) {
@@ -255,7 +260,7 @@ private class VoiceInputActionWindow(
     }
 
     override fun close(): CloseResult {
-        inputTransaction.cancel()
+        inputTransaction?.cancel()
         runBlocking { initJob.cancelAndJoin() }
         recognizerView.value?.cancel()
         state.modelManager.cancelAll()
@@ -270,7 +275,7 @@ private class VoiceInputActionWindow(
                 state.soundPlayer.playCancelSound()
                 cancelPlayed = true
             }
-            inputTransaction.cancel()
+            inputTransaction?.cancel()
         }
     }
 
@@ -292,17 +297,23 @@ private class VoiceInputActionWindow(
         wasFinished = true
 
         manager.getLifecycleScope().launch(Dispatchers.Main) {
-            val sanitized = ModelOutputSanitizer.sanitize(result, inputTransaction.textContext)
-            inputTransaction.commit(sanitized)
-            manager.announce(result)
-            manager.closeActionWindow()
+            if (resultHandler != null) {
+                resultHandler.invoke(result)
+            } else {
+                val transaction = inputTransaction ?: return@launch
+                val sanitized = ModelOutputSanitizer.sanitize(result, transaction.textContext)
+                transaction.commit(sanitized)
+                manager.announce(result)
+                manager.closeActionWindow()
+            }
         }
     }
 
     override fun partialResult(result: String) {
+        val transaction = inputTransaction ?: return
         manager.getLifecycleScope().launch(Dispatchers.Main) {
-            val sanitized = ModelOutputSanitizer.sanitize(result, inputTransaction.textContext)
-            inputTransaction.updatePartial(sanitized)
+            val sanitized = ModelOutputSanitizer.sanitize(result, transaction.textContext)
+            transaction.updatePartial(sanitized)
         }
     }
 
@@ -351,7 +362,8 @@ val VoiceInputAction = Action(icon = R.drawable.mic_fill,
 // ============ Groq Voice Input ============
 
 private class GroqVoiceInputActionWindow(
-    val manager: KeyboardManagerForAction
+    val manager: KeyboardManagerForAction,
+    val resultHandler: ((String) -> Unit)? = null
 ) : ActionWindow(), RecognizerViewListener {
     val context = manager.getContext()
     private val soundPlayer = SoundPlayer(context)
@@ -374,7 +386,7 @@ private class GroqVoiceInputActionWindow(
         bluetoothPreferredByUser = false
     ))
 
-    private var inputTransaction = manager.createInputTransaction()
+    private var inputTransaction = if (resultHandler == null) manager.createInputTransaction() else null
     private var shouldPlaySounds = context.getSetting(ENABLE_SOUND)
 
     private var recordingJob: kotlinx.coroutines.Job? = null
@@ -390,10 +402,11 @@ private class GroqVoiceInputActionWindow(
 
     @Composable
     override fun WindowContents(keyboardShown: Boolean) {
-        val context = LocalContext.current
-        if (!hasStarted) {
-            hasStarted = true
-            startRecording()
+        LaunchedEffect(Unit) {
+            if (!hasStarted) {
+                hasStarted = true
+                startRecording()
+            }
         }
         Box(modifier = Modifier
             .fillMaxSize()
@@ -657,10 +670,15 @@ private class GroqVoiceInputActionWindow(
                         soundPlayer.playStartSound()
                     }
 
-                    val sanitized = ModelOutputSanitizer.sanitize(finalText, inputTransaction.textContext)
-                    inputTransaction.commit(sanitized)
-                    manager.announce(finalText)
-                    manager.closeActionWindow()
+                    if (resultHandler != null) {
+                        resultHandler.invoke(finalText)
+                    } else {
+                        val transaction = inputTransaction ?: return@withContext
+                        val sanitized = ModelOutputSanitizer.sanitize(finalText, transaction.textContext)
+                        transaction.commit(sanitized)
+                        manager.announce(finalText)
+                        manager.closeActionWindow()
+                    }
                 }
 
                 // Resume media after successful transcription
@@ -686,7 +704,7 @@ private class GroqVoiceInputActionWindow(
         clearCommunicationDevice(context)
         resumeMediaIfWePaused()
         recordingJob?.cancel()
-        inputTransaction.cancel()
+        inputTransaction?.cancel()
         return CloseResult.Default
     }
 
@@ -696,7 +714,7 @@ private class GroqVoiceInputActionWindow(
                 soundPlayer.playCancelSound()
             }
             clearCommunicationDevice(context)
-            inputTransaction.cancel()
+            inputTransaction?.cancel()
             resumeMediaIfWePaused()
         }
     }
@@ -768,3 +786,70 @@ val GroqVoiceInputAction = Action(
         }
     }
 )
+
+/**
+ * Embeds the same voice-input session used by the keyboard microphone in another action.
+ * This keeps provider selection, recording UI, audio routing, and transcription behavior aligned.
+ */
+@Composable
+fun EmbeddedVoiceInput(
+    manager: KeyboardManagerForAction,
+    onResult: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val currentOnResult by rememberUpdatedState(onResult)
+
+    if (context.getSetting(OFFLINE_MODE)) {
+        val locales = remember(manager) { manager.getActiveLocales() }
+        val state = remember(manager) { VoiceInputPersistentState(manager) }
+        val model = remember(manager, locales) {
+            ResourceHelper.tryFindingVoiceInputModelForLocale(
+                manager.getContext(),
+                locales.firstOrNull() ?: Locale.ROOT
+            )
+        }
+
+        if (model == null) {
+            DisposableEffect(state) {
+                onDispose {
+                    manager.getLifecycleScope().launch(Dispatchers.Default) {
+                        state.close()
+                    }
+                }
+            }
+            NoModelInstalled(locales.firstOrNull() ?: Locale.ROOT)
+        } else {
+            val window = remember(manager, state, model, locales) {
+                VoiceInputActionWindow(
+                    manager = manager,
+                    state = state,
+                    locales = locales,
+                    model = model,
+                    resultHandler = { currentOnResult(it) }
+                )
+            }
+            DisposableEffect(window, state) {
+                onDispose {
+                    window.close()
+                    manager.getLifecycleScope().launch(Dispatchers.Default) {
+                        state.close()
+                    }
+                }
+            }
+            window.WindowContents(keyboardShown = false)
+        }
+    } else if (context.getSetting(GROQ_API_KEY).isBlank()) {
+        GroqVoiceInputNoApiKeyWindow().WindowContents(keyboardShown = false)
+    } else {
+        val window = remember(manager) {
+            GroqVoiceInputActionWindow(
+                manager = manager,
+                resultHandler = { currentOnResult(it) }
+            )
+        }
+        DisposableEffect(window) {
+            onDispose { window.close() }
+        }
+        window.WindowContents(keyboardShown = false)
+    }
+}

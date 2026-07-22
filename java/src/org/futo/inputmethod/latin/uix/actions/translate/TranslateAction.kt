@@ -1,25 +1,20 @@
 package org.futo.inputmethod.latin.uix.actions.translate
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,10 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,42 +36,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
-import kotlin.math.pow
-import kotlin.math.sqrt
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionTextEditor
 import org.futo.inputmethod.latin.uix.ActionWindow
-import org.futo.inputmethod.latin.uix.GROQ_API_KEY
-import org.futo.inputmethod.latin.uix.GROQ_WHISPER_LANGUAGE
-import org.futo.inputmethod.latin.uix.GROQ_WHISPER_MODEL
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
-import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
-import org.futo.inputmethod.latin.uix.settings.SettingsActivity
+import org.futo.inputmethod.latin.uix.actions.EmbeddedVoiceInput
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
-import org.futo.voiceinput.shared.GroqRecognizer
-import org.futo.voiceinput.shared.types.MagnitudeState
-import org.futo.voiceinput.shared.ui.InnerRecognize
-import org.futo.voiceinput.shared.ui.MicrophoneDeviceState
-import org.futo.voiceinput.shared.clearCommunicationDevice
-import org.futo.voiceinput.shared.isBluetoothAvailable
-import org.futo.voiceinput.shared.pauseMediaIfPlaying
-import org.futo.voiceinput.shared.resumeMedia
-import org.futo.voiceinput.shared.setCommunicationDevice
 
 @Composable
 fun TranslateHeader(
@@ -86,8 +57,7 @@ fun TranslateHeader(
     targetLangCode: String,
     onSourceChanged: (String) -> Unit,
     onTargetChanged: (String) -> Unit,
-    onSwap: () -> Unit,
-    onClose: () -> Unit
+    onSwap: () -> Unit
 ) {
     val srcLang = ALL_SUPPORTED_LANGUAGES.find { it.code == sourceLangCode } ?: ALL_SUPPORTED_LANGUAGES.first()
     val targetLangs = ALL_SUPPORTED_LANGUAGES.filter { it.code != "auto" }
@@ -102,9 +72,10 @@ fun TranslateHeader(
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Spacer(Modifier.weight(1f))
-
-        Box {
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterEnd
+        ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF7A3E1D),
@@ -116,8 +87,7 @@ fun TranslateHeader(
                     text = srcLang.name,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
+                    fontWeight = FontWeight.Medium
                 )
             }
             DropdownMenu(expanded = showSrcMenu, onDismissRequest = { showSrcMenu = false }) {
@@ -149,7 +119,10 @@ fun TranslateHeader(
 
         Spacer(Modifier.width(8.dp))
 
-        Box {
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart
+        ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF7A3E1D),
@@ -161,8 +134,7 @@ fun TranslateHeader(
                     text = tgtLang.name,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
+                    fontWeight = FontWeight.Medium
                 )
             }
             DropdownMenu(expanded = showTgtMenu, onDismissRequest = { showTgtMenu = false }) {
@@ -177,16 +149,14 @@ fun TranslateHeader(
                 }
             }
         }
-
-        Spacer(Modifier.weight(1f))
     }
 }
 
 @Composable
 fun TranslateContents(
     manager: KeyboardManagerForAction,
-    onClose: () -> Unit,
-    keyboardShown: Boolean
+    keyboardShown: Boolean,
+    onSupplementalContentChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val currentProviderName = context.getSetting(TRANSLATE_PROVIDER)
@@ -240,8 +210,27 @@ fun TranslateContents(
         }
     }
 
+    LaunchedEffect(translatedText, errorMessage) {
+        onSupplementalContentChanged(translatedText.isNotBlank() || errorMessage != null)
+    }
+
+    if (voiceMode) {
+        EmbeddedVoiceInput(manager = manager) { text ->
+            voiceMode = false
+            val current = textState.value.trim()
+            textState.value = if (current.isNotBlank()) {
+                "$current ${text.trim()}"
+            } else {
+                text.trim()
+            }
+            translatedText = ""
+            errorMessage = null
+        }
+        return
+    }
+
     Column(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxSize()
     ) {
         TranslateHeader(
             sourceLangCode = sourceLang,
@@ -262,343 +251,120 @@ fun TranslateContents(
                     context.setSettingBlocking(TRANSLATE_DEFAULT_SOURCE.key, sourceLang)
                     context.setSettingBlocking(TRANSLATE_DEFAULT_TARGET.key, targetLang)
                 }
-            },
-            onClose = onClose
+            }
         )
 
         Spacer(Modifier.height(4.dp))
 
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(24.dp),
             color = LocalKeyboardScheme.current.keyboardContainer,
             contentColor = LocalKeyboardScheme.current.onKeyboardContainer,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFD49A76)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 0.dp)
+            modifier = if (keyboardShown) {
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            }
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 0.dp),
+                modifier = if (keyboardShown) {
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                } else {
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp)
+                },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (voiceMode) {
-                    VoiceInputBar(
-                        textState = textState,
-                        onVoiceDone = { text ->
-                            voiceMode = false
-                            val current = textState.value.trim()
-                            textState.value = if (current.isNotBlank()) current + " " + text.trim() else text.trim()
-                            translatedText = ""
-                            errorMessage = null
-                        },
-                        onVoiceCancel = { voiceMode = false }
-                    )
-                } else {
-                    Box(modifier = Modifier.weight(1f).heightIn(max = 48.dp)) {
-                        ActionTextEditor(
-                            text = textState,
-                            placeholder = "Type text to translate...",
-                            autofocus = true
-                        )
-                    }
-
-                    if (isTranslating) {
-                        Spacer(Modifier.width(8.dp))
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else if (translatedText.isNotBlank()) {
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(
-                            onClick = {
-                                manager.typeText(translatedText)
-                                textState.value = ""
-                                translatedText = ""
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Insert Translation",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    if (!keyboardShown) {
-                        Spacer(Modifier.width(4.dp))
-                        IconButton(
-                            onClick = { voiceMode = true },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.mic_fill),
-                                contentDescription = stringResource(R.string.action_voice_input_title),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!voiceMode) {
-            if (translatedText.isNotBlank() || errorMessage != null) {
-                Spacer(Modifier.height(4.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = errorMessage ?: translatedText,
-                        color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                        fontSize = 14.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VoiceInputBar(
-    textState: androidx.compose.runtime.MutableState<String>,
-    onVoiceDone: (String) -> Unit,
-    onVoiceCancel: () -> Unit
-) {
-    val context = LocalContext.current
-    val apiKey = context.getSetting(GROQ_API_KEY)
-    val scope = rememberCoroutineScope()
-
-    if (apiKey.isBlank()) {
-        Box(modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    painter = painterResource(R.drawable.mic_fill),
-                    contentDescription = stringResource(R.string.action_voice_input_title),
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.action_voice_input_open_settings_button_to_grant_microphone_permission),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                IconButton(
-                    onClick = { SettingsActivity.openToNavDest(context, "voiceInput") }
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.mic_fill),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-        return
-    }
-
-    val whisperModel = context.getSetting(GROQ_WHISPER_MODEL)
-    val whisperLanguage = context.getSetting(GROQ_WHISPER_LANGUAGE)
-    val aiModel = context.getSetting(org.futo.inputmethod.latin.uix.GROQ_AI_MODEL)
-
-    val magnitudeState = remember { mutableFloatStateOf(0.0f) }
-    val statusState = remember { mutableStateOf(MagnitudeState.NOT_TALKED_YET) }
-    val currentDeviceState = remember { mutableStateOf(
-        MicrophoneDeviceState(
-            bluetoothAvailable = false,
-            bluetoothActive = false,
-            setBluetooth = { },
-            deviceName = "",
-            bluetoothPreferredByUser = false
-        )
-    ) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    var stopRequested by remember { mutableStateOf(false) }
-    val audioBuffer = remember { mutableListOf<Float>() }
-    var recordingJob by remember { mutableStateOf<Job?>(null) }
-
-    fun startRecording() {
-        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            statusState.value = MagnitudeState.MIC_MAY_BE_BLOCKED
-            errorMessage = "Please grant microphone permission to use voice input"
-            return
-        }
-
-        val preferBluetooth = context.getSetting(PREFER_BLUETOOTH)
-        val (bluetoothActive, deviceName) = setCommunicationDevice(context, preferBluetooth)
-        val bluetoothAvailable = isBluetoothAvailable(context)
-
-        currentDeviceState.value = MicrophoneDeviceState(
-            bluetoothAvailable = bluetoothAvailable,
-            bluetoothActive = bluetoothActive,
-            bluetoothPreferredByUser = preferBluetooth,
-            setBluetooth = { enable ->
-                context.setSettingBlocking(PREFER_BLUETOOTH.key, enable)
-                stopRequested = true
-                recordingJob?.cancel()
-                startRecording()
-            },
-            deviceName = deviceName
-        )
-
-        errorMessage = null
-        audioBuffer.clear()
-        stopRequested = false
-        val wasMediaPlaying = pauseMediaIfPlaying(context)
-
-        recordingJob = scope.launch(Dispatchers.Default) {
-            try {
-                val sampleRate = 16000
-                val bufferSize = AudioRecord.getMinBufferSize(
-                    sampleRate,
-                    android.media.AudioFormat.CHANNEL_IN_MONO,
-                    android.media.AudioFormat.ENCODING_PCM_16BIT
-                ).coerceAtLeast(4096)
-
-                val recorder = AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                    sampleRate,
-                    android.media.AudioFormat.CHANNEL_IN_MONO,
-                    android.media.AudioFormat.ENCODING_PCM_16BIT,
-                    bufferSize
-                )
-
-                if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-                    withContext(Dispatchers.Main) {
-                        errorMessage = "Failed to initialize audio recorder"
-                    }
-                    return@launch
-                }
-
-                withContext(Dispatchers.Main) {
-                    magnitudeState.floatValue = 0.0f
-                    statusState.value = MagnitudeState.NOT_TALKED_YET
-                }
-
-                recorder.startRecording()
-
-                val shortBuffer = ShortArray(1600)
-                var totalSamples = 0
-                val maxSamples = sampleRate * 120
-                var hasTalked = false
-
-                while (totalSamples < maxSamples && !stopRequested) {
-                    yield()
-                    val nRead = recorder.read(shortBuffer, 0, 1600, AudioRecord.READ_NON_BLOCKING)
-                    if (nRead <= 0) { delay(50); continue }
-
-                    var sumSq = 0.0
-                    for (i in 0 until nRead) {
-                        val f = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
-                        audioBuffer.add(f)
-                        sumSq += f * f
-                    }
-                    totalSamples += nRead
-
-                    val rms = sqrt(sumSq / nRead).toFloat()
-                    if (rms > 0.01f) hasTalked = true
-                    val magnitude = (1.0f - 0.1f.toDouble().pow(24.0 * rms)).toFloat()
-                    val state = if (hasTalked) MagnitudeState.TALKING else MagnitudeState.NOT_TALKED_YET
-
-                    withContext(Dispatchers.Main) {
-                        magnitudeState.floatValue = magnitude
-                        statusState.value = state
-                    }
-                }
-
-                recorder.stop()
-                recorder.release()
-                clearCommunicationDevice(context)
-
-                if (audioBuffer.isNotEmpty()) {
-                    val result = withContext(Dispatchers.IO) {
-                        GroqRecognizer.transcribe(
-                            apiKey = apiKey,
-                            audioData = audioBuffer.toFloatArray(),
-                            sampleRate = 16000,
-                            model = whisperModel,
-                            language = if (whisperLanguage == "auto") null else whisperLanguage
-                        )
-                    }
-
-                    val text = if (result.isSuccess) {
-                        var v = result.getOrThrow().trim()
-                        if (v.isNotBlank() && aiModel.isNotBlank() && aiModel != "none") {
-                            val enhanced = withContext(Dispatchers.IO) {
-                                GroqRecognizer.enhanceText(apiKey, v, aiModel)
-                            }
-                            enhanced.getOrNull() ?: v
-                        } else v
+                Box(
+                    modifier = if (keyboardShown) {
+                        Modifier
+                            .weight(1f)
+                            .height(40.dp)
                     } else {
-                        throw result.exceptionOrNull() ?: Exception("Transcription failed")
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
                     }
-
-                    withContext(Dispatchers.Main) {
-                        if (text.isNotBlank()) {
-                            onVoiceDone(text)
+                ) {
+                    ActionTextEditor(
+                        text = textState,
+                        placeholder = "Type text to translate...",
+                        autofocus = true,
+                        modifier = if (keyboardShown) {
+                            Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
                         } else {
-                            errorMessage = "No speech detected"
+                            Modifier.fillMaxSize()
                         }
+                    )
+                }
+
+                if (isTranslating) {
+                    Spacer(Modifier.width(8.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else if (translatedText.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            manager.typeText(translatedText)
+                            textState.value = ""
+                            translatedText = ""
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Insert Translation",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    errorMessage = e.message ?: "Recording failed"
+
+                if (!keyboardShown) {
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { voiceMode = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.mic_fill),
+                            contentDescription = stringResource(R.string.action_voice_input_title),
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
-            } finally {
-                if (wasMediaPlaying) resumeMedia(context)
             }
         }
-    }
 
-    LaunchedEffect(Unit) {
-        startRecording()
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp)
-            .clickable(
-                enabled = true,
-                onClick = { stopRequested = true },
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (errorMessage != null) {
-            Text(
-                text = errorMessage!!,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(16.dp)
-            )
-        } else {
-            InnerRecognize(
-                magnitude = magnitudeState,
-                state = statusState,
-                device = currentDeviceState
-            )
+        if (translatedText.isNotBlank() || errorMessage != null) {
+            Spacer(Modifier.height(4.dp))
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = errorMessage ?: translatedText,
+                    color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
         }
     }
 }
@@ -611,8 +377,12 @@ val TranslateAction = Action(
     settingsMenu = TranslateMenu,
     windowImpl = { manager, _ ->
         object : ActionWindow() {
+            private val hasSupplementalContent = mutableStateOf(false)
+
             override val showCloseButton: Boolean get() = false
             override val positionIsUserManagable: Boolean get() = false
+            override val fixedWindowHeightWhenKeyboardShown
+                get() = if (hasSupplementalContent.value) 140.dp else 92.dp
 
             @Composable
             override fun windowName(): String = stringResource(R.string.action_translate_title)
@@ -621,8 +391,8 @@ val TranslateAction = Action(
             override fun WindowContents(keyboardShown: Boolean) {
                 TranslateContents(
                     manager = manager,
-                    onClose = { manager.closeActionWindow() },
-                    keyboardShown = keyboardShown
+                    keyboardShown = keyboardShown,
+                    onSupplementalContentChanged = { hasSupplementalContent.value = it }
                 )
             }
         }
