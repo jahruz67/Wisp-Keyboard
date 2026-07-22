@@ -7,6 +7,9 @@ on:
     branches: [ master, main ]
   workflow_dispatch:
 
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configuration-cache=true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,6 +29,28 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/
+            ~/.gradle/wrapper/
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache Android SDK & NDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms/
+            ${{ env.ANDROID_HOME }}/ndk/
+            ${{ env.ANDROID_HOME }}/build-tools/
+            ${{ env.ANDROID_HOME }}/cmdline-tools/
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/build.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
 
       - name: Install required SDK components & NDK
         run: |
@@ -51,7 +76,7 @@ jobs:
           fi
 
       - name: Build Release APK
-        run: ./gradlew assembleStableRelease --no-daemon
+        run: ./gradlew assembleStableRelease --build-cache
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
