@@ -49,6 +49,7 @@ import org.futo.inputmethod.latin.uix.ActionWindow
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
 import org.futo.inputmethod.latin.uix.getSetting
+import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu
 
 @Composable
@@ -70,14 +71,14 @@ fun TranslateHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Back Button matching screenshot circle
         IconButton(
             onClick = onClose,
             modifier = Modifier
-                .size(40.dp)
+                .size(34.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
         ) {
@@ -88,7 +89,7 @@ fun TranslateHeader(
             )
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
 
         // Source Language Pill
         Box {
@@ -102,8 +103,8 @@ fun TranslateHeader(
             ) {
                 Text(
                     text = srcLang.name,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                    fontSize = 15.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -120,22 +121,22 @@ fun TranslateHeader(
             }
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
 
         // Swap Icon Button
         IconButton(
             onClick = onSwap,
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(28.dp)
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_swap),
                 contentDescription = "Swap Languages",
                 tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(16.dp)
             )
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
 
         // Target Language Pill
         Box {
@@ -149,8 +150,8 @@ fun TranslateHeader(
             ) {
                 Text(
                     text = tgtLang.name,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                    fontSize = 15.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
@@ -228,19 +229,27 @@ fun TranslateContents(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 2.dp)
     ) {
         // Header matching image
         TranslateHeader(
             sourceLangCode = sourceLang,
             targetLangCode = targetLang,
-            onSourceChanged = { sourceLang = it },
-            onTargetChanged = { targetLang = it },
+            onSourceChanged = {
+                sourceLang = it
+                context.setSettingBlocking(TRANSLATE_DEFAULT_SOURCE.key, it)
+            },
+            onTargetChanged = {
+                targetLang = it
+                context.setSettingBlocking(TRANSLATE_DEFAULT_TARGET.key, it)
+            },
             onSwap = {
                 if (sourceLang != "auto") {
                     val temp = sourceLang
                     sourceLang = targetLang
                     targetLang = temp
+                    context.setSettingBlocking(TRANSLATE_DEFAULT_SOURCE.key, sourceLang)
+                    context.setSettingBlocking(TRANSLATE_DEFAULT_TARGET.key, targetLang)
                 }
             },
             onClose = onClose
@@ -256,12 +265,12 @@ fun TranslateContents(
             border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFD49A76)), // Warm subtle border ring
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .padding(horizontal = 12.dp, vertical = 2.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(modifier = Modifier.weight(1f)) {

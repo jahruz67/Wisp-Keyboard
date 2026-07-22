@@ -1,37 +1,26 @@
 package org.futo.inputmethod.latin.uix.settings.pages
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.futo.inputmethod.latin.R
-import org.futo.inputmethod.latin.uix.actions.translate.ALL_SUPPORTED_LANGUAGES
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_ADDON_ENABLED
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_API_KEY
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_CUSTOM_URL
-import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_DEFAULT_SOURCE
-import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_DEFAULT_TARGET
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_LIVE_ENABLED
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_PROVIDER
 import org.futo.inputmethod.latin.uix.actions.translate.TranslationProviderType
 import org.futo.inputmethod.latin.uix.SettingsTextEdit
-import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.SettingRadioGroup
@@ -134,73 +123,6 @@ val TranslateMenu = UserSettingsMenu(
                 )
                 if (textState.value != customUrl) {
                     context.setSettingBlocking(TRANSLATE_CUSTOM_URL.key, textState.value)
-                }
-            }
-        },
-        UserSetting(
-            name = R.string.translate_setting_default_source
-        ) {
-            val context = LocalContext.current
-            val srcCode = useDataStoreValue(TRANSLATE_DEFAULT_SOURCE)
-            val selectedLang = ALL_SUPPORTED_LANGUAGES.find { it.code == srcCode } ?: ALL_SUPPORTED_LANGUAGES.first()
-
-            var expanded by remember { mutableStateOf(false) }
-
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(stringResource(R.string.translate_setting_default_source), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = true }
-                        .padding(vertical = 8.dp)
-                ) {
-                    Text(selectedLang.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-                }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    ALL_SUPPORTED_LANGUAGES.forEach { lang ->
-                        DropdownMenuItem(
-                            text = { Text(lang.name) },
-                            onClick = {
-                                context.setSettingBlocking(TRANSLATE_DEFAULT_SOURCE.key, lang.code)
-                                expanded = false
-                            }
-                        )
-                    }
-                }
-            }
-        },
-        UserSetting(
-            name = R.string.translate_setting_default_target
-        ) {
-            val context = LocalContext.current
-            val tgtCode = useDataStoreValue(TRANSLATE_DEFAULT_TARGET)
-            val targetLangs = ALL_SUPPORTED_LANGUAGES.filter { it.code != "auto" }
-            val selectedLang = targetLangs.find { it.code == tgtCode } ?: targetLangs.first()
-
-            var expanded by remember { mutableStateOf(false) }
-
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(stringResource(R.string.translate_setting_default_target), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = true }
-                        .padding(vertical = 8.dp)
-                ) {
-                    Text(selectedLang.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
-                }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    targetLangs.forEach { lang ->
-                        DropdownMenuItem(
-                            text = { Text(lang.name) },
-                            onClick = {
-                                context.setSettingBlocking(TRANSLATE_DEFAULT_TARGET.key, lang.code)
-                                expanded = false
-                            }
-                        )
-                    }
                 }
             }
         },
