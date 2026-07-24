@@ -91,7 +91,8 @@ class KeyboardIconsSet {
 
         @JvmStatic
         fun iconExists(iconId: String?): Boolean {
-            return validIcons.contains(iconId ?: return false)
+            return validIcons.contains(iconId ?: return false) ||
+                iconId.startsWith("action_addon:")
         }
     }
 }

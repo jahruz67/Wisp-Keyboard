@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.sp
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionWindow
+import org.futo.inputmethod.latin.uix.displayName
+import org.futo.inputmethod.latin.uix.displayPainter
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
 import org.futo.inputmethod.latin.uix.LocalManager
 import org.futo.inputmethod.latin.uix.getSettingBlocking
@@ -92,7 +94,7 @@ fun ActionItem(action: Action, modifier: Modifier = Modifier, dragIcon: Boolean 
                 ) {
                     Spacer(modifier = Modifier.weight(1.0f))
                     Icon(
-                        painterResource(id = action.icon),
+                        action.displayPainter(),
                         contentDescription = null,
                         modifier = Modifier.align(
                             CenterHorizontally
@@ -102,7 +104,7 @@ fun ActionItem(action: Action, modifier: Modifier = Modifier, dragIcon: Boolean 
                     Spacer(modifier = Modifier.weight(1.0f))
 
                     Text(
-                        stringResource(id = action.name),
+                        action.displayName(LocalContext.current),
                         modifier = Modifier.align(
                             CenterHorizontally
                         ),
@@ -151,7 +153,7 @@ fun MoreActionsView() {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        items(actions, key = { it.name }) {
+        items(actions, key = { ActionRegistry.actionToStringId(it) }) {
             ActionItem(it, Modifier.clickable {
                 manager!!.activateAction(it)
             })

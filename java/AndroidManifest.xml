@@ -204,6 +204,12 @@
             android:name=".uix.actions.clipboard.ClipboardProvider"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <provider
+            android:authorities="${applicationId}.addons"
+            android:name=".uix.addons.AddonMediaProvider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 
     <!-- To query enabled input methods for voice IME detection -->

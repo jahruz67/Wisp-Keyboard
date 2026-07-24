@@ -726,9 +726,20 @@ Default is %1$s</string>
     <string name="personal_dictionary_cancel_action">Cancel</string>
     <string name="personal_dictionary_delete_additional_file">Delete extra dictionary file?</string>
     <string name="personal_dictionary_delete_additional_file_text">Are you sure you want to delete the additional dictionary file for %s?</string>
-    <!-- Add-ons & Translation strings -->
+    <!-- Add-on strings -->
     <string name="addons_settings_title">Add-ons</string>
     <string name="addons_settings_subtitle">Manage extensions and extra tools</string>
+    <string name="addons_import">Import add-on</string>
+    <string name="addons_import_subtitle">Install a sandboxed add-on from a ZIP file</string>
+    <string name="addons_importing">Reading add-on package…</string>
+    <string name="addons_install_title">Install %1$s?</string>
+    <string name="addons_unsigned_warning">This add-on is unsigned. Only install ZIPs from a source you trust.</string>
+    <string name="addons_first_use_notice">Sensitive capabilities will ask again the first time they are used.</string>
+    <string name="addons_install">Install</string>
+    <string name="addons_install_failed">The add-on could not be installed.</string>
+    <string name="addons_error_title">Add-on import failed</string>
+    <string name="addons_system_tag">System add-on</string>
+    <string name="addons_system_managed">Built into Wisp Keyboard and cannot be uninstalled</string>
     <string name="translate_addon_title">Translate</string>
     <string name="translate_addon_subtitle">Translate text in real-time between languages</string>
     <string name="translate_setting_enable">Enable Translate Add-on</string>

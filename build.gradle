@@ -164,6 +164,32 @@ tasks.register('updateBundleResources', Exec) {
     ]
 }
 
+def addonSourceDirectory = file('add-ons')
+def generatedAddonAssetsDirectory = file("$buildDir/generated/addon-assets")
+
+tasks.register('packageAddons') {
+    inputs.dir(addonSourceDirectory)
+    outputs.dir(generatedAddonAssetsDirectory)
+
+    doLast {
+        delete(generatedAddonAssetsDirectory)
+        def outputDirectory = file("$generatedAddonAssetsDirectory/addons")
+        outputDirectory.mkdirs()
+
+        addonSourceDirectory.listFiles()
+                ?.findAll { it.isDirectory() && file("${it}/addon.json").isFile() }
+                ?.sort { a, b -> a.name <=> b.name }
+                ?.each { addonDirectory ->
+                    ant.zip(
+                            destfile: file("$outputDirectory/${addonDirectory.name}.zip"),
+                            basedir: addonDirectory
+                    )
+                }
+    }
+}
+
+preBuild.dependsOn packageAddons
+
 tasks.register('updateContributors') {
     def script = file('tools/contributors.py')
     def outputFile = file('java/src/org/futo/inputmethod/latin/uix/settings/pages/credits/Contributors.kt')
@@ -336,7 +362,7 @@ android {
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
-            assets.srcDirs = ['java/assets']
+            assets.srcDirs = ['java/assets', generatedAddonAssetsDirectory]
         }
 
         playstore {
@@ -360,6 +386,10 @@ android {
             res.srcDirs = ['tests/res']
             java.srcDirs = ['tests/src']
             manifest.srcFile 'tests/AndroidManifest.xml'
+        }
+
+        test {
+            java.srcDirs = ['java/test']
         }
     }
 

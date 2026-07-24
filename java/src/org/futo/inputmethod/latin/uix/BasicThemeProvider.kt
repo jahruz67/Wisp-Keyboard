@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.StateListDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import android.util.TypedValue
 import androidx.annotation.ColorInt
@@ -30,6 +31,7 @@ import org.futo.inputmethod.keyboard.internal.KeyboardIconsSet
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.actions.AllActions
 import org.futo.inputmethod.latin.uix.actions.AllActionsMap
+import org.futo.inputmethod.latin.uix.addons.decodeAddonIcon
 import org.futo.inputmethod.latin.uix.theme.AdvancedThemeMatcher
 import org.futo.inputmethod.latin.uix.theme.KeyBackground
 import org.futo.inputmethod.v2keyboard.Direction
@@ -395,12 +397,26 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
 
         // Add by name (action_emoji)
         AllActionsMap.forEach { (i, it) ->
-            addIcon("action_${i}", it.icon, onKeyColor)
+            addIcon(
+                "action_${i}",
+                it.dynamicIconPath?.let { path ->
+                    decodeAddonIcon(path)?.let { bitmap -> BitmapDrawable(context.resources, bitmap) }
+                }
+                    ?: AppCompatResources.getDrawable(context, it.icon),
+                onKeyColor
+            )
         }
 
         // Add by id (action_0)
         AllActions.forEachIndexed { i, it ->
-            addIcon("action_${i}", it.icon, onKeyColor)
+            addIcon(
+                "action_${i}",
+                it.dynamicIconPath?.let { path ->
+                    decodeAddonIcon(path)?.let { bitmap -> BitmapDrawable(context.resources, bitmap) }
+                }
+                    ?: AppCompatResources.getDrawable(context, it.icon),
+                onKeyColor
+            )
         }
 
         if(!showKeyHints) {

@@ -182,6 +182,9 @@ enum class PersistentStateInitialization {
 data class Action(
     @DrawableRes val icon: Int,
     @StringRes val name: Int,
+    val dynamicName: String? = null,
+    val dynamicIconPath: String? = null,
+    val addonId: String? = null,
     val canShowKeyboard: Boolean = false,
     val keepScreenAwake: Boolean = false,
 

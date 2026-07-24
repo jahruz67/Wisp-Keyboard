@@ -17,9 +17,10 @@ import org.futo.inputmethod.latin.uix.actions.clipboard.ClipboardHistoryAction
 import org.futo.inputmethod.latin.uix.actions.fonttyper.FontTyperAction
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSettingBlocking
+import org.futo.inputmethod.latin.uix.addons.AddonActionRegistry
 
 // Note: indices must stay stable
-val AllActionsMap = mapOf(
+private val BuiltinActionsMap = mapOf(
     "emoji" to EmojiAction,
     "settings" to SettingsAction,
     "paste" to PasteAction,
@@ -46,12 +47,19 @@ val AllActionsMap = mapOf(
     "translate" to org.futo.inputmethod.latin.uix.actions.translate.TranslateAction,
 )
 
-val ActionToId = AllActionsMap.entries.associate { it.value to it.key }
+val AllActionsMap: Map<String, Action>
+    get() = BuiltinActionsMap + AddonActionRegistry.actions
 
-val AllActions = AllActionsMap.values.toList().verifyNamesAreUnique()
-val AllActionKeys = AllActionsMap.keys.toList()
+val ActionToId: Map<Action, String>
+    get() = AllActionsMap.entries.associate { it.value to it.key }
 
-val ActionIdToInt = AllActionsMap.entries.associate { it.key to AllActions.indexOf(it.value) }
+val AllActions: List<Action>
+    get() = AllActionsMap.values.toList().verifyNamesAreUnique()
+val AllActionKeys: List<String>
+    get() = AllActionsMap.keys.toList()
+
+val ActionIdToInt: Map<String, Int>
+    get() = AllActionsMap.entries.associate { it.key to AllActions.indexOf(it.value) }
 
 val Action.keyCode
     get() = AllActions.indexOf(this) + Constants.CODE_ACTION_0
@@ -62,7 +70,7 @@ val Action.keyCodeAlt
 // Name integers of actions must be unique
 private fun List<Action>.verifyNamesAreUnique(): List<Action> {
     val names = mutableIntSetOf()
-    forEach {
+    filter { it.dynamicName == null }.forEach {
         assert(!names.contains(it.name)) { "The action $it contains a duplicate name!" }
     }
     return this
@@ -142,7 +150,7 @@ sealed class ActionEditorItem {
 
 fun ActionEditorItem.toKey(): String {
     return when(this) {
-        is ActionEditorItem.Item -> this.action.name.toString()
+        is ActionEditorItem.Item -> ActionRegistry.actionToStringId(this.action)
         is ActionEditorItem.Separator -> "sep " + this.category.name
     }
 }
@@ -306,4 +314,15 @@ fun Context.updateSettingsWithNewActions(newActions: Map<ActionCategory, List<Ac
 
     setSettingBlocking(PinnedActions.key, (map[ActionCategory.PinnedKey] ?: listOf()).serializeActionListToString())
     setSettingBlocking(FavoriteActions.key, (map[ActionCategory.Favorites] ?: listOf()).serializeActionListToString())
+}
+
+fun refreshActionSettings(context: Context) {
+    var existing = context.getSetting(ActionsSettings)
+        .toActionEditorItems()
+        .ensureWellFormed()
+        .toActionMap()
+    if (existing[ActionCategory.ActionKey].isNullOrEmpty()) {
+        existing = existing + (ActionCategory.ActionKey to listOf(EmojiAction))
+    }
+    context.updateSettingsWithNewActions(existing)
 }

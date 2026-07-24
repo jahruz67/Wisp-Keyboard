@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.core.content.edit
 //import androidx.work.Configuration
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
+import org.futo.inputmethod.latin.uix.addons.AddonManager
 
 class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
     //override val workManagerConfiguration: Configuration
@@ -40,6 +41,13 @@ class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
             } catch(e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        if (isDirectBootUnlocked) {
+            AddonManager.get(this)
         }
     }
 }

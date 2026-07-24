@@ -125,6 +125,7 @@ import org.futo.inputmethod.latin.suggestions.SuggestionStripViewListener
 import org.futo.inputmethod.latin.uix.actions.ActionEditor
 import org.futo.inputmethod.latin.uix.actions.ActionRegistry
 import org.futo.inputmethod.latin.uix.actions.AllActions
+import org.futo.inputmethod.latin.uix.addons.AddonManager
 import org.futo.inputmethod.latin.uix.actions.BugViewerAction
 import org.futo.inputmethod.latin.uix.actions.BugViewerState
 import org.futo.inputmethod.latin.uix.actions.KeyboardModeAction
@@ -761,14 +762,14 @@ class UixManager(private val latinIME: LatinIME) {
         keyboardManagerForAction.announce(
             latinIME.getString(
                 R.string.action_menu_opened,
-                latinIME.resources.getString(action.name)
+                action.displayName(latinIME)
             ))
     }
 
     private fun returnBackToMainKeyboardViewFromAction(allowSkipClosing: Boolean): Boolean {
         if(currWindowActionWindow.value == null) return true
 
-        val name = latinIME.resources.getString(currWindowAction.value!!.name)
+        val name = currWindowAction.value!!.displayName(latinIME)
 
         if(currWindowActionWindow.value!!.close() == CloseResult.PreventClosing
             && allowSkipClosing
@@ -1549,6 +1550,16 @@ class UixManager(private val latinIME: LatinIME) {
         initKeyboardLoadActions()
 
         isActionsExpanded.value = latinIME.getSettingBlocking(ActionBarExpanded)
+
+        latinIME.lifecycleScope.launch(Dispatchers.Main) {
+            AddonManager.get(latinIME).addons.collect { addons ->
+                val activeAddonId = currWindowAction.value?.addonId
+                if (activeAddonId != null && addons.none { it.id == activeAddonId }) {
+                    closeActionWindow()
+                }
+                latinIME.invalidateKeyboard(true)
+            }
+        }
 
         latinIME.lifecycleScope.launch(Dispatchers.Main) {
             WindowInfoTracker.getOrCreate(latinIME).windowLayoutInfo(latinIME).collect {

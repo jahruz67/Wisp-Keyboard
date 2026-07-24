@@ -217,7 +217,7 @@ private class VoiceInputActionWindow(
             return@launch
         }
 
-        // This window can be created from inside another composition (Translate). Publish and
+        // This window can be created from inside another action composition. Publish and
         // start on Main so that Compose reliably observes the new recognizer state.
         withContext(Dispatchers.Main) {
             this@VoiceInputActionWindow.recognizerView.value = recognizerView

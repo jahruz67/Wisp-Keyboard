@@ -117,7 +117,7 @@ val HomeScreenLite = UserSettingsMenu(
             subtitle = R.string.addons_settings_subtitle,
             style = NavigationItemStyle.HomeSecondary,
             navigateTo = "addons",
-            icon = R.drawable.ic_translate
+            icon = R.drawable.ic_addon
         ),
 
         //if(!isPaid) {

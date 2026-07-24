@@ -563,8 +563,8 @@ fun LazyItemScope.ActionItem(idx: Int, action: Action, onSelect: (Action) -> Uni
             onLongClick = action.altPressImpl?.let { { onLongSelect(action) } },
             onClick = { onSelect(action) }), contentAlignment = Center) {
         Icon(
-            painter = painterResource(id = action.icon),
-            contentDescription = stringResource(action.name),
+            painter = action.displayPainter(),
+            contentDescription = action.displayName(LocalContext.current),
             tint = contentCol,
             modifier = Modifier.size(20.dp),
         )
@@ -600,8 +600,8 @@ fun ActionItemSmall(action: Action, onSelect: (Action) -> Unit, onLongSelect: (A
         contentAlignment = Center
     ) {
         Icon(
-            painter = painterResource(id = action.icon),
-            contentDescription = stringResource(action.name),
+            painter = action.displayPainter(),
+            contentDescription = action.displayName(LocalContext.current),
             tint = fgCol,
             modifier = Modifier.size(16.dp)
         )

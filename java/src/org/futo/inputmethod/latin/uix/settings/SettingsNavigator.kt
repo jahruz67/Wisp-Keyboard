@@ -90,6 +90,7 @@ object Route {
     @Serializable data class CustomTheme(val uri: String)
     @Serializable data class DeleteTheme(val name: String)
     @Serializable data class ThirdPartyInfo(val idx: Int)
+    @Serializable data class AddonDetail(val id: String)
 }
 
 
@@ -105,8 +106,6 @@ val SettingsMenus = listOf(
     PredictiveTextMenu,
     BlacklistScreenLite,
     VoiceInputMenu,
-    org.futo.inputmethod.latin.uix.settings.pages.AddonsMenu,
-    org.futo.inputmethod.latin.uix.settings.pages.TranslateMenu,
     ActionsScreen,
     HelpMenu,
     MiscMenu,
@@ -154,6 +153,9 @@ fun SettingsNavigator(
                 dialog<Route.DeleteTheme> { DeleteCustomThemeDialog(it.name, nav) }
 
                 composable<Route.ThirdPartyInfo> { ProjectInfoView(it.idx, nav) }
+                composable<Route.AddonDetail> {
+                    org.futo.inputmethod.latin.uix.settings.pages.AddonDetailScreen(it.id, nav)
+                }
 
                 dialog<Route.Error> { ErrorDialog(it.title, it.body, nav) }
                 dialog<Route.Info> { InfoDialog(it.title, it.body, nav) }
@@ -161,6 +163,9 @@ fun SettingsNavigator(
             composable("home") { HomeScreen(navController) }
             composable("search") { SearchScreen(navController) }
             composable("languages") { LanguagesScreen(navController) }
+            composable("addons") {
+                org.futo.inputmethod.latin.uix.settings.pages.AddonsScreen(navController)
+            }
             composable("addLanguage") { SelectLanguageScreen(navController) }
             composable("pdict") {
                 PersonalDictionaryLanguageList()
