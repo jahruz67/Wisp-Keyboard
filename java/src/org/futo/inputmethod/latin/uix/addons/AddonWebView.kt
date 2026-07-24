@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.BuildConfig
+import org.futo.inputmethod.latin.uix.DialogRequestItem
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.LocalKeyboardScheme
 import org.json.JSONObject
@@ -514,7 +515,20 @@ fun AddonWebPanel(
     val requestPermission: suspend (String, String) -> Boolean = { capability, description ->
         val deferred = CompletableDeferred<Boolean>()
         withContext(Dispatchers.Main) {
-            permissionRequest = PermissionRequest(capability, description, deferred)
+            if (keyboardManager != null) {
+                keyboardManager.requestDialog(
+                    "Allow ${addon.manifest.name}?\n\n$description.\n\n" +
+                        "This is a one-time approval for this add-on.",
+                    listOf(
+                        DialogRequestItem("Deny") { deferred.complete(false) },
+                        DialogRequestItem("Allow") { deferred.complete(true) },
+                    ),
+                ) {
+                    deferred.complete(false)
+                }
+            } else {
+                permissionRequest = PermissionRequest(capability, description, deferred)
+            }
         }
         deferred.await()
     }
