@@ -29,10 +29,19 @@ object InputConnectionUtil {
         }
 
         if(selStart == -1 || selEnd == -1) {
-            val extracted = ic.getExtractedText(ExtractedTextRequest().apply { hintMaxChars = 1 }, 0)
+            val extracted = try {
+                ic.getExtractedText(
+                    ExtractedTextRequest().apply { hintMaxChars = 1 },
+                    0
+                )
+            } catch (_: AssertionError) {
+                // Android System WebView can throw here while its focused editor is still
+                // establishing an InputConnection. Treat that as unavailable cursor data.
+                null
+            }
             if(extracted != null) {
                 selStart = extracted.selectionStart + extracted.startOffset
-                selStart = extracted.selectionEnd   + extracted.startOffset
+                selEnd = extracted.selectionEnd + extracted.startOffset
 
                 if(selStart < minValue || selStart < 0) selStart = -1
                 if(selEnd   < minValue || selEnd   < 0) selEnd   = -1

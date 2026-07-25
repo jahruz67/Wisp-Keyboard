@@ -921,7 +921,8 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     val inputConnectionOverridenWithSuggestions
         get() = isInputConnectionOverridden && overrideEditorInfo?.let {
-            !it.privateImeOptions.contains("org.futo.inputmethod.latin.NoSuggestions=1")
+            !it.privateImeOptions.orEmpty()
+                .contains("org.futo.inputmethod.latin.NoSuggestions=1")
         } ?: false
 
     override fun getCurrentInputConnection(): InputConnection? {
