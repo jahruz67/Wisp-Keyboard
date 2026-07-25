@@ -2,7 +2,6 @@ package org.futo.inputmethod.latin.uix.actions.clipboard
 
 import android.content.ContentProvider
 import android.content.ContentValues
-import android.content.Context
 import android.content.UriMatcher
 import android.database.Cursor
 import android.net.Uri
@@ -27,28 +26,36 @@ data class ClipboardPasteRequest(
 )
 
 object ClipboardProviderState {
-    val requests: HashMap<UUID, ClipboardPasteRequest> = HashMap()
+    private val requests: HashMap<UUID, ClipboardPasteRequest> = HashMap()
 
+    @Synchronized
     fun addRequest(request: ClipboardPasteRequest): UUID {
+        pruneExpiredRequests(System.currentTimeMillis())
         val uuid = UUID.randomUUID()
-        requests.put(uuid, request)
+        requests[uuid] = request
         return uuid
     }
 
-    fun fulfillRequest(context: Context, uuid: UUID): ParcelFileDescriptor? {
-        val request = requests[uuid] ?: throw IllegalArgumentException("Invalid request")
-        if(System.currentTimeMillis() > request.expiration) throw IllegalArgumentException("Invalid request")
-
-        val file = request.file
-
-
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+    @Synchronized
+    fun fulfillRequest(uuid: UUID): ParcelFileDescriptor? {
+        val request = getValidRequest(uuid)
+        return ParcelFileDescriptor.open(request.file, ParcelFileDescriptor.MODE_READ_ONLY)
     }
 
-    fun getMimeType(context: Context, uuid: UUID): String {
-        val request = requests[uuid] ?: throw IllegalArgumentException("Invalid request")
+    @Synchronized
+    fun getMimeType(uuid: UUID): String {
+        return getValidRequest(uuid).mimeType
+    }
 
-        return request.mimeType
+    private fun getValidRequest(uuid: UUID): ClipboardPasteRequest {
+        val now = System.currentTimeMillis()
+        pruneExpiredRequests(now)
+        return requests[uuid]?.takeIf { now <= it.expiration }
+            ?: throw IllegalArgumentException("Invalid request")
+    }
+
+    private fun pruneExpiredRequests(now: Long) {
+        requests.entries.removeAll { (_, request) -> now > request.expiration }
     }
 }
 
@@ -79,10 +86,10 @@ class ClipboardProvider: ContentProvider() {
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor?
-            = ClipboardProviderState.fulfillRequest(context!!, getUUID(uri))
+            = ClipboardProviderState.fulfillRequest(getUUID(uri))
 
     override fun getType(uri: Uri): String
-            = ClipboardProviderState.getMimeType(context!!, getUUID(uri))
+            = ClipboardProviderState.getMimeType(getUUID(uri))
 
 
     override fun insert(

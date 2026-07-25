@@ -12,6 +12,9 @@ import java.io.File
 private const val DEFAULT_ADDON_MEDIA_MIME_TYPE = "application/octet-stream"
 private val VALID_ADDON_MEDIA_MIME_TYPE =
     Regex("[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*")
+private val VALID_ADDON_ID =
+    Regex("[a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9_-]*)+")
+private val VALID_ADDON_MEDIA_HANDLE = Regex("[a-f0-9-]{36}")
 
 internal fun sanitizeAddonMediaMimeType(value: String?): String {
     val mime = value
@@ -72,8 +75,8 @@ class AddonMediaProvider : ContentProvider() {
         if (segments.size != 2) return null
         val addonId = segments[0]
         val handle = segments[1]
-        if (!addonId.matches(Regex("[a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9_-]*)+"))) return null
-        if (!handle.matches(Regex("[a-f0-9-]{36}"))) return null
+        if (!VALID_ADDON_ID.matches(addonId)) return null
+        if (!VALID_ADDON_MEDIA_HANDLE.matches(handle)) return null
         val manager = AddonManager.get(context)
         if (manager.get(addonId) == null) return null
         val directory = manager.mediaDirectory(addonId).canonicalFile

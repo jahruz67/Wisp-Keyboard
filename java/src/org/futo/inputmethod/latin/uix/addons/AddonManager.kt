@@ -6,9 +6,11 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.uix.actions.MaximumAddonActionCount
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class AddonManager private constructor(private val context: Context) {
     private val validStorageKey = Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}")
@@ -19,6 +21,8 @@ class AddonManager private constructor(private val context: Context) {
     private val preferences = context.getSharedPreferences("wisp_addons", Context.MODE_PRIVATE)
     private val mutableAddons = MutableStateFlow<List<InstalledAddon>>(emptyList())
     val addons: StateFlow<List<InstalledAddon>> = mutableAddons.asStateFlow()
+    @Volatile private var addonsById: Map<String, InstalledAddon> = emptyMap()
+    private val mediaDirectories = ConcurrentHashMap<String, File>()
 
     init {
         installedRoot.mkdirs()
@@ -27,13 +31,31 @@ class AddonManager private constructor(private val context: Context) {
         clearStaging()
         recoverInterruptedBundledUpdates()
         removeSupersededNativeSystemPackages()
-        seedBundledAddons()
         refresh()
+
+        val bundled = context.assets.list("addons")
+            ?.filter { it.endsWith(".zip", ignoreCase = true) }
+            ?.sorted()
+            ?: emptyList()
+        val bundledSignature = bundled.joinToString(separator = "\u0000")
+        val bundledStateChanged =
+            preferences.getInt(BUNDLED_APP_VERSION_KEY, Int.MIN_VALUE) != BuildConfig.VERSION_CODE ||
+                preferences.getString(BUNDLED_ASSET_SIGNATURE_KEY, null) != bundledSignature ||
+                addons.value.count { it.isSystem } < bundled.size
+        if (bundledStateChanged) {
+            if (seedBundledAddons(bundled)) {
+                preferences.edit()
+                    .putInt(BUNDLED_APP_VERSION_KEY, BuildConfig.VERSION_CODE)
+                    .putString(BUNDLED_ASSET_SIGNATURE_KEY, bundledSignature)
+                    .apply()
+            }
+            refresh()
+        }
     }
 
     @Synchronized
     fun refresh() {
-        mutableAddons.value = installedRoot.listFiles()
+        val installed = installedRoot.listFiles()
             ?.filter { it.isDirectory && !it.name.startsWith('.') }
             ?.mapNotNull { directory ->
                 runCatching {
@@ -43,10 +65,12 @@ class AddonManager private constructor(private val context: Context) {
             }
             ?.sortedBy { it.id }
             ?: emptyList()
-        AddonActionRegistry.update(mutableAddons.value)
+        addonsById = installed.associateBy { it.id }
+        mutableAddons.value = installed
+        AddonActionRegistry.update(installed)
     }
 
-    fun get(id: String): InstalledAddon? = addons.value.firstOrNull { it.id == id }
+    fun get(id: String): InstalledAddon? = addonsById[id]
 
     fun prepareImport(uri: Uri): AddonInstallResult {
         val archive = File(stagingRoot, "${UUID.randomUUID()}.zip")
@@ -134,6 +158,7 @@ class AddonManager private constructor(private val context: Context) {
             "Unsafe add-on directory."
         }
         require(addon.directory.deleteRecursively()) { "Could not delete the add-on files." }
+        mediaDirectories.remove(id)
         File(mediaRoot, id).deleteRecursively()
         clearNamespacedPreferences(id)
         refresh()
@@ -193,7 +218,8 @@ class AddonManager private constructor(private val context: Context) {
         preferences.edit().putBoolean(grantKey(id, capability), granted).apply()
     }
 
-    fun mediaDirectory(id: String): File = File(mediaRoot, id).also { it.mkdirs() }
+    fun mediaDirectory(id: String): File =
+        mediaDirectories.getOrPut(id) { File(mediaRoot, id).also { it.mkdirs() } }
 
     private fun applySettingDefaults(manifest: AddonManifest) {
         val editor = preferences.edit()
@@ -207,21 +233,26 @@ class AddonManager private constructor(private val context: Context) {
     }
 
     private fun removeSupersededNativeSystemPackages() {
+        if (preferences.getBoolean(SUPERSEDED_TRANSLATE_REMOVED_KEY, false)) return
+
         val directory = File(installedRoot, SUPERSEDED_TRANSLATE_PACKAGE_ID)
+        var removalSucceeded = true
         if (
             directory.exists() &&
             directory.canonicalFile.parentFile == installedRoot.canonicalFile
         ) {
-            directory.deleteRecursively()
+            removalSucceeded = directory.deleteRecursively()
         }
-        File(mediaRoot, SUPERSEDED_TRANSLATE_PACKAGE_ID).deleteRecursively()
+        mediaDirectories.remove(SUPERSEDED_TRANSLATE_PACKAGE_ID)
+        val media = File(mediaRoot, SUPERSEDED_TRANSLATE_PACKAGE_ID)
+        if (media.exists()) removalSucceeded = media.deleteRecursively() && removalSucceeded
         clearNamespacedPreferences(SUPERSEDED_TRANSLATE_PACKAGE_ID)
+        if (removalSucceeded) {
+            preferences.edit().putBoolean(SUPERSEDED_TRANSLATE_REMOVED_KEY, true).apply()
+        }
     }
 
-    private fun seedBundledAddons() {
-        val bundled = context.assets.list("addons")
-            ?.filter { it.endsWith(".zip", ignoreCase = true) }
-            ?: return
+    private fun seedBundledAddons(bundled: List<String>): Boolean {
         val bundledIds = mutableSetOf<String>()
         var allBundlesValid = true
         bundled.forEach { assetName ->
@@ -269,21 +300,23 @@ class AddonManager private constructor(private val context: Context) {
             }
         }
         if (allBundlesValid) removeObsoleteBundledAddons(bundledIds)
+        return allBundlesValid
     }
 
     private fun clearNamespacedPreferences(id: String) {
         val prefixes = listOf("setting:$id:", "state:$id:", "grant:$id:")
-        preferences.edit().apply {
-            preferences.all.keys.filter { key -> prefixes.any { key.startsWith(it) } }
-                .forEach { remove(it) }
-        }.apply()
+        val keys = preferences.all.keys.filter { key -> prefixes.any { key.startsWith(it) } }
+        if (keys.isNotEmpty()) {
+            preferences.edit().apply { keys.forEach { remove(it) } }.apply()
+        }
     }
 
     private fun clearGrantPreferences(id: String) {
         val prefix = "grant:$id:"
-        preferences.edit().apply {
-            preferences.all.keys.filter { it.startsWith(prefix) }.forEach { remove(it) }
-        }.apply()
+        val keys = preferences.all.keys.filter { it.startsWith(prefix) }
+        if (keys.isNotEmpty()) {
+            preferences.edit().apply { keys.forEach { remove(it) } }.apply()
+        }
     }
 
     private fun removeObsoleteBundledAddons(bundledIds: Set<String>) {
@@ -294,6 +327,7 @@ class AddonManager private constructor(private val context: Context) {
                     ?: return@forEach
                 if (manifest.system && manifest.id !in bundledIds) {
                     if (directory.deleteRecursively()) {
+                        mediaDirectories.remove(manifest.id)
                         File(mediaRoot, manifest.id).deleteRecursively()
                         clearNamespacedPreferences(manifest.id)
                     } else {
@@ -407,6 +441,9 @@ class AddonManager private constructor(private val context: Context) {
 
     companion object {
         private const val BUNDLED_BACKUP_PREFIX = ".bundled-backup-"
+        private const val BUNDLED_APP_VERSION_KEY = "bundled_addons_app_version"
+        private const val BUNDLED_ASSET_SIGNATURE_KEY = "bundled_addons_asset_signature"
+        private const val SUPERSEDED_TRANSLATE_REMOVED_KEY = "superseded_translate_removed"
         @Volatile private var instance: AddonManager? = null
 
         fun get(context: Context): AddonManager =

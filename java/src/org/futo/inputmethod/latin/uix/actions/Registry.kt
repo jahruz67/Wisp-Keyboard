@@ -51,31 +51,85 @@ private val BuiltinActionsMap = mapOf(
 val MaximumAddonActionCount: Int =
     Constants.CODE_ACTION_MAX - Constants.CODE_ACTION_0 + 1 - BuiltinActionsMap.size
 
+private data class ActionSnapshot(
+    val addonActions: Map<String, Action>,
+    val allActionsMap: Map<String, Action>,
+    val actionToId: Map<Action, String>,
+    val allActions: List<Action>,
+    val allActionKeys: List<String>,
+    val actionIdToInt: Map<String, Int>,
+    val actionToInt: Map<Action, Int>,
+)
+
+private fun buildActionSnapshot(addonActions: Map<String, Action>): ActionSnapshot {
+    val allActionsMap = buildMap(BuiltinActionsMap.size + addonActions.size) {
+        putAll(BuiltinActionsMap)
+        putAll(addonActions)
+    }
+    val allActions = allActionsMap.values.toList().verifyNamesAreUnique()
+    return ActionSnapshot(
+        addonActions = addonActions,
+        allActionsMap = allActionsMap,
+        actionToId = allActionsMap.entries.associate { (id, action) -> action to id },
+        allActions = allActions,
+        allActionKeys = allActionsMap.keys.toList(),
+        actionIdToInt = allActionsMap.keys.withIndex().associate { (index, id) -> id to index },
+        actionToInt = allActions.withIndex().associate { (index, action) -> action to index },
+    )
+}
+
+private val ActionSnapshotLock = Any()
+@Volatile
+private var CachedActionSnapshot = buildActionSnapshot(emptyMap())
+
+private fun currentActionSnapshot(): ActionSnapshot {
+    val addonActions = AddonActionRegistry.actions
+    val cached = CachedActionSnapshot
+    if (cached.addonActions === addonActions) return cached
+
+    return synchronized(ActionSnapshotLock) {
+        val synchronizedCached = CachedActionSnapshot
+        if (synchronizedCached.addonActions === addonActions) {
+            synchronizedCached
+        } else {
+            buildActionSnapshot(addonActions).also { CachedActionSnapshot = it }
+        }
+    }
+}
+
 val AllActionsMap: Map<String, Action>
-    get() = BuiltinActionsMap + AddonActionRegistry.actions
+    get() = currentActionSnapshot().allActionsMap
 
 val ActionToId: Map<Action, String>
-    get() = AllActionsMap.entries.associate { it.value to it.key }
+    get() = currentActionSnapshot().actionToId
 
 val AllActions: List<Action>
-    get() = AllActionsMap.values.toList().verifyNamesAreUnique()
+    get() = currentActionSnapshot().allActions
 val AllActionKeys: List<String>
-    get() = AllActionsMap.keys.toList()
+    get() = currentActionSnapshot().allActionKeys
 
 val ActionIdToInt: Map<String, Int>
-    get() = AllActionsMap.entries.associate { it.key to AllActions.indexOf(it.value) }
+    get() = currentActionSnapshot().actionIdToInt
 
 private fun Action.registeredId(): String? {
+    val snapshot = currentActionSnapshot()
     val stableAddonId = addonId?.let { "addon:$it" }
-    if (stableAddonId != null && AllActionsMap.containsKey(stableAddonId)) {
+    if (stableAddonId != null && snapshot.allActionsMap.containsKey(stableAddonId)) {
         return stableAddonId
     }
 
-    return AllActionsMap.entries.firstOrNull { it.value == this }?.key
+    return snapshot.actionToId[this]
 }
 
-private fun Action.registeredIndex(): Int =
-    registeredId()?.let { AllActionKeys.indexOf(it) } ?: -1
+private fun Action.registeredIndex(): Int {
+    val snapshot = currentActionSnapshot()
+    val stableAddonId = addonId?.let { "addon:$it" }
+    return if (stableAddonId != null) {
+        snapshot.actionIdToInt[stableAddonId]
+    } else {
+        snapshot.actionToInt[this]
+    } ?: -1
+}
 
 val Action.keyCode
     get() = registeredIndex() + Constants.CODE_ACTION_0
@@ -87,7 +141,7 @@ val Action.keyCodeAlt
 private fun List<Action>.verifyNamesAreUnique(): List<Action> {
     val names = mutableIntSetOf()
     filter { it.dynamicName == null }.forEach {
-        assert(!names.contains(it.name)) { "The action $it contains a duplicate name!" }
+        assert(names.add(it.name)) { "The action $it contains a duplicate name!" }
     }
     return this
 }
@@ -121,7 +175,7 @@ object ActionRegistry {
     }
 
     fun actionStringIdToIdx(id: String): Int {
-        return AllActionsMap.keys.indexOf(id)
+        return ActionIdToInt[id] ?: -1
     }
 
     fun actionToStringId(action: Action): String {

@@ -56,20 +56,31 @@ class WhisperGGML(
         }
         this@WhisperGGML.partialResultCallback = partialResultCallback
 
-        val result = inferNative(handle, samples, prompt, languages, bailLanguages, decodingMode.value, suppressNonSpeechTokens).trim()
+        try {
+            val result = inferNative(
+                handle,
+                samples,
+                prompt,
+                languages,
+                bailLanguages,
+                decodingMode.value,
+                suppressNonSpeechTokens,
+            ).trim()
 
-        if(result.contains("<>CANCELLED<>")) {
-            if(result.contains("flag")) {
-                throw InferenceCancelledException()
-            } else if(result.contains("lang=")) {
-                val language = result.split("lang=")[1]
-                throw BailLanguageException(language)
+            if(result.contains("<>CANCELLED<>")) {
+                if(result.contains("flag")) {
+                    throw InferenceCancelledException()
+                } else if(result.contains("lang=")) {
+                    val language = result.substringAfter("lang=")
+                    throw BailLanguageException(language)
+                } else {
+                    throw IllegalStateException("Cancelled for unknown reason")
+                }
             } else {
-                throw IllegalStateException("Cancelled for unknown reason")
+                return@withContext result
             }
-
-        } else {
-            return@withContext result
+        } finally {
+            this@WhisperGGML.partialResultCallback = { }
         }
     }
 

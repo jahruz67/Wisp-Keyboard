@@ -129,7 +129,10 @@ fun NoModelInstalled(locale: Locale) {
 
 class VoiceInputPersistentState(val manager: KeyboardManagerForAction) : PersistentActionState {
     val modelManager = ModelManager(manager.getContext())
-    val soundPlayer = SoundPlayer(manager.getContext())
+    private val soundPlayerDelegate = lazy(LazyThreadSafetyMode.NONE) {
+        SoundPlayer(manager.getContext())
+    }
+    val soundPlayer by soundPlayerDelegate
     val userDictionaryObserver = UserDictionaryObserver(manager.getContext())
 
     override suspend fun cleanUp() {
@@ -137,8 +140,12 @@ class VoiceInputPersistentState(val manager: KeyboardManagerForAction) : Persist
     }
 
     override fun close() {
-        runBlocking { modelManager.cleanUp() }
-        userDictionaryObserver.unregister()
+        try {
+            runBlocking { modelManager.cleanUp() }
+        } finally {
+            if (soundPlayerDelegate.isInitialized()) soundPlayer.close()
+            userDictionaryObserver.unregister()
+        }
     }
 }
 

@@ -40,6 +40,7 @@ object AddonPackage {
         var extractedBytes = 0L
         val entryNames = mutableSetOf<String>()
         val targetPaths = mutableSetOf<String>()
+        val copyBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
 
         archive.inputStream().buffered().use { input ->
             ZipInputStream(input).use { zip ->
@@ -79,15 +80,14 @@ object AddonPackage {
                             "Could not create the parent of ${entry.name}."
                         }
                         target.outputStream().buffered().use { output ->
-                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                             while (true) {
-                                val read = zip.read(buffer)
+                                val read = zip.read(copyBuffer)
                                 if (read < 0) break
                                 extractedBytes += read
                                 require(extractedBytes <= MAX_EXTRACTED_BYTES) {
                                     "The expanded add-on is larger than 100 MiB."
                                 }
-                                output.write(buffer, 0, read)
+                                output.write(copyBuffer, 0, read)
                             }
                         }
                     }

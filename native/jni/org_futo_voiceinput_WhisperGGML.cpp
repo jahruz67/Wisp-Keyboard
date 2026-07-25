@@ -13,7 +13,6 @@ struct WhisperModelState {
     JNIEnv *env;
     jobject partial_result_instance;
     jmethodID partial_result_method;
-    int n_threads = 4;
     struct whisper_context *context = nullptr;
 
     std::vector<int> last_forbidden_languages;
@@ -62,6 +61,7 @@ static jstring WhisperGGML_infer(JNIEnv *env, jobject instance, jlong handle, jf
 
     auto *state = reinterpret_cast<WhisperModelState *>(handle);
     state->cancel_flag = 0;
+    state->partial_results.clear();
 
     std::vector<int> allowed_languages;
     int num_languages = env->GetArrayLength(languages);
@@ -70,6 +70,7 @@ static jstring WhisperGGML_infer(JNIEnv *env, jobject instance, jlong handle, jf
         std::string str = jstring2string(env, jstr);
 
         allowed_languages.push_back(whisper_lang_id(str.c_str()));
+        env->DeleteLocalRef(jstr);
     }
 
 
@@ -80,6 +81,7 @@ static jstring WhisperGGML_infer(JNIEnv *env, jobject instance, jlong handle, jf
         std::string str = jstring2string(env, jstr);
 
         forbidden_languages.push_back(whisper_lang_id(str.c_str()));
+        env->DeleteLocalRef(jstr);
     }
 
     state->last_forbidden_languages = forbidden_languages;
@@ -88,7 +90,7 @@ static jstring WhisperGGML_infer(JNIEnv *env, jobject instance, jlong handle, jf
     jfloat *samples = env->GetFloatArrayElements(samples_array, nullptr);
 
     long num_procs = sysconf(_SC_NPROCESSORS_ONLN);
-    if(num_procs < 2 || num_procs > 16) num_procs = 6; // Make sure the number is sane
+    if(num_procs < 1 || num_procs > 64) num_procs = 1;
 
     whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     wparams.print_progress = false;
@@ -96,7 +98,9 @@ static jstring WhisperGGML_infer(JNIEnv *env, jobject instance, jlong handle, jf
     wparams.print_special = false;
     wparams.print_timestamps = false;
     wparams.max_tokens = 256;
-    wparams.n_threads = (int)num_procs;
+    // Mobile SoCs commonly report efficiency and performance cores together. Using all of them
+    // can increase contention, memory bandwidth pressure, and thermal throttling.
+    wparams.n_threads = (int)std::min(num_procs, 4L);
 
     wparams.audio_ctx = std::max(160, std::min(1500, (int)ceil((double)num_samples / (double)(320.0)) + 32));
     wparams.temperature_inc = 0.0f;
@@ -203,6 +207,7 @@ static jstring WhisperGGML_infer(JNIEnv *env, jobject instance, jlong handle, jf
 
     AKLOGI("Calling whisper_full");
     int res = whisper_full(state->context, wparams, samples, (int)num_samples);
+    env->ReleaseFloatArrayElements(samples_array, samples, JNI_ABORT);
     if(res != 0) {
         AKLOGE("WhisperGGML whisper_full failed with non-zero code %d", res);
     }

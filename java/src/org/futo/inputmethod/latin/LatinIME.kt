@@ -486,12 +486,15 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
                 KeyboardSizeSettingKind.entries.associateWith { null }.toMutableMap()
 
             dataStore.data.collect { data ->
-                prev.keys.toList().forEach {
-                    if(data[KeyboardSettings[it]!!.key] != prev[it]) {
-                        prev[it] = data[KeyboardSettings[it]!!.key]
-                        onSizeUpdated()
+                var sizeChanged = false
+                KeyboardSizeSettingKind.entries.forEach { kind ->
+                    val value = data[KeyboardSettings.getValue(kind).key]
+                    if (value != prev[kind]) {
+                        prev[kind] = value
+                        sizeChanged = true
                     }
                 }
+                if (sizeChanged) onSizeUpdated()
             }
         }
 

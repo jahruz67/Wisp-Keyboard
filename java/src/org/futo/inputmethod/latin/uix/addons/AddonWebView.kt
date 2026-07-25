@@ -58,6 +58,24 @@ private const val MAX_HTML_BYTES = 10L * 1024L * 1024L
 private const val MAX_TEXT_RESPONSE_BYTES = 10L * 1024L * 1024L
 private const val MAX_MEDIA_RESPONSE_BYTES = 25L * 1024L * 1024L
 private const val MAX_MEDIA_CACHE_BYTES = 100L * 1024L * 1024L
+private const val MEDIA_ACCESS_TIMESTAMP_INTERVAL_MS = 60_000L
+private val HTML_HEAD_REGEX = Regex("(<head[^>]*>)", RegexOption.IGNORE_CASE)
+private val VALID_MEDIA_HANDLE_REGEX = Regex("[a-f0-9-]{36}")
+private val VALID_HEADER_NAME_REGEX = Regex("[A-Za-z0-9-]{1,100}")
+private val TEXT_RESPONSE_MIME_TYPES =
+    setOf("application/javascript", "application/json", "image/svg+xml")
+private val SENSITIVE_REDIRECT_HEADERS = setOf("authorization", "proxy-authorization")
+private val HOST_CONTROLLED_HEADERS = setOf(
+    "connection",
+    "content-length",
+    "cookie",
+    "host",
+    "origin",
+    "transfer-encoding",
+)
+private val SUPPORTED_NETWORK_METHODS =
+    setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
+private val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)
 
 private data class PermissionRequest(
     val capability: String,
@@ -142,7 +160,12 @@ private open class LocalAddonWebViewClient(
             else -> null
         } ?: return blocked()
         val isMedia = segments.first() == "media"
-        if (isMedia) file.setLastModified(System.currentTimeMillis())
+        if (isMedia) {
+            val now = System.currentTimeMillis()
+            if (now - file.lastModified() >= MEDIA_ACCESS_TIMESTAMP_INTERVAL_MS) {
+                file.setLastModified(now)
+            }
+        }
 
         val mime = if (isMedia) {
             readAddonMediaMimeType(file)
@@ -169,9 +192,9 @@ private open class LocalAddonWebViewClient(
         if (!isMedia && mime == "text/html" && file.length() > MAX_HTML_BYTES) return blocked()
         val stream = if (!isMedia && mime == "text/html") {
             val html = file.readText()
-            val injected = if (Regex("<head[^>]*>", RegexOption.IGNORE_CASE).containsMatchIn(html)) {
+            val injected = if (HTML_HEAD_REGEX.containsMatchIn(html)) {
                 html.replaceFirst(
-                    Regex("(<head[^>]*>)", RegexOption.IGNORE_CASE),
+                    HTML_HEAD_REGEX,
                     "$1<script>$BRIDGE_BOOTSTRAP</script>",
                 )
             } else {
@@ -183,7 +206,7 @@ private open class LocalAddonWebViewClient(
         }
         val encoding = if (
             mime.startsWith("text/") ||
-            mime in setOf("application/javascript", "application/json", "image/svg+xml")
+            mime in TEXT_RESPONSE_MIME_TYPES
         ) {
             "utf-8"
         } else {
@@ -315,9 +338,10 @@ private class AddonJavascriptBridge(
             ?: error("Media insertion is only available from a keyboard action.")
         val handle = arguments.requireString("handle")
         arguments.requireString("mimeType")
-        require(handle.matches(Regex("[a-f0-9-]{36}"))) { "Invalid media handle." }
-        val file = File(manager.mediaDirectory(addon.id), handle).canonicalFile
-        require(file.parentFile == manager.mediaDirectory(addon.id).canonicalFile && file.isFile) {
+        require(VALID_MEDIA_HANDLE_REGEX.matches(handle)) { "Invalid media handle." }
+        val mediaDirectory = manager.mediaDirectory(addon.id).canonicalFile
+        val file = File(mediaDirectory, handle).canonicalFile
+        require(file.parentFile == mediaDirectory && file.isFile) {
             "Media handle does not exist."
         }
         val mime = readAddonMediaMimeType(file)
@@ -396,7 +420,7 @@ private class AddonJavascriptBridge(
                         request.headers.forEach { (key, value) ->
                             if (
                                 includeSensitiveHeaders ||
-                                key.lowercase() !in setOf("authorization", "proxy-authorization")
+                                key.lowercase() !in SENSITIVE_REDIRECT_HEADERS
                             ) {
                                 setRequestProperty(key, value)
                             }
@@ -410,7 +434,7 @@ private class AddonJavascriptBridge(
                     }
 
                     val status = connection.responseCode
-                    if (status in setOf(301, 302, 303, 307, 308)) {
+                    if (status in REDIRECT_STATUS_CODES) {
                         require(redirects++ < 5) { "Too many redirects." }
                         val location = connection.getHeaderField("Location")
                             ?: error("Redirect has no Location header.")
@@ -436,7 +460,8 @@ private class AddonJavascriptBridge(
                         ) ?: ByteArrayInputStream(ByteArray(0))
                     if (request.responseType == "media") {
                         val handle = UUID.randomUUID().toString()
-                        val target = File(manager.mediaDirectory(addon.id), handle)
+                        val mediaDirectory = manager.mediaDirectory(addon.id)
+                        val target = File(mediaDirectory, handle)
                         val sidecar = File(target.parentFile, "$handle.mime")
                         try {
                             stream.use { input ->
@@ -446,7 +471,7 @@ private class AddonJavascriptBridge(
                             }
                             val mime = sanitizeAddonMediaMimeType(connection.contentType)
                             sidecar.writeText(mime)
-                            pruneMediaCache(manager.mediaDirectory(addon.id))
+                            pruneMediaCache(mediaDirectory)
                             return@withContext JSONObject()
                                 .put("status", status)
                                 .put("handle", handle)
@@ -474,9 +499,7 @@ private class AddonJavascriptBridge(
 
     private fun parseNetworkRequest(arguments: JSONObject): NetworkRequest {
         val method = arguments.optString("method", "GET").uppercase()
-        require(
-            method in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
-        ) {
+        require(method in SUPPORTED_NETWORK_METHODS) {
             "Unsupported HTTP method: $method"
         }
         val body = if (arguments.has("body")) arguments.requireString("body") else null
@@ -491,19 +514,10 @@ private class AddonJavascriptBridge(
             arguments.optJSONObject("headers")?.let { json ->
                 require(json.length() <= 64) { "Too many request headers." }
                 json.keys().forEach { key ->
-                    require(key.matches(Regex("[A-Za-z0-9-]{1,100}"))) {
+                    require(VALID_HEADER_NAME_REGEX.matches(key)) {
                         "Invalid request header name."
                     }
-                    require(
-                        key.lowercase() !in setOf(
-                            "connection",
-                            "content-length",
-                            "cookie",
-                            "host",
-                            "origin",
-                            "transfer-encoding",
-                        )
-                    ) {
+                    require(key.lowercase() !in HOST_CONTROLLED_HEADERS) {
                         "Header $key is controlled by the host."
                     }
                     val value = json.getString(key)
@@ -724,8 +738,6 @@ fun AddonWebPanel(
             }
             CookieManager.getInstance().setAcceptCookie(false)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-            clearCache(true)
-            clearHistory()
             webViewClient = object : LocalAddonWebViewClient(addon, addonManager) {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)

@@ -3,34 +3,32 @@ package org.futo.voiceinput.shared.whisper
 import android.content.Context
 import org.futo.voiceinput.shared.ggml.WhisperGGML
 import org.futo.voiceinput.shared.types.ModelLoader
+import java.util.concurrent.ConcurrentHashMap
 
 
 class ModelManager(
     val context: Context
 ) {
-    private val loadedModels: HashMap<Any, WhisperGGML> = hashMapOf()
+    private val loadedModels = ConcurrentHashMap<Any, WhisperGGML>()
 
+    @Synchronized
     fun obtainModel(model: ModelLoader): WhisperGGML {
         val key = model.key(context)
-        if (!loadedModels.contains(key)) {
-            loadedModels[key] = model.loadGGML(context)
-        }
-
-        return loadedModels[key]!!
+        return loadedModels[key]
+            ?: model.loadGGML(context).also { loadedModels[key] = it }
     }
 
     fun cancelAll() {
-        loadedModels.forEach {
-            it.value.cancel()
-        }
+        loadedModels.values.forEach { it.cancel() }
     }
 
     suspend fun cleanUp() {
-        for (model in loadedModels.entries) {
-            model.value.cancel()
-            model.value.close()
+        val models = synchronized(this) {
+            loadedModels.values.toList().also { loadedModels.clear() }
         }
-
-        loadedModels.clear()
+        for (model in models) {
+            model.cancel()
+            model.close()
+        }
     }
 }

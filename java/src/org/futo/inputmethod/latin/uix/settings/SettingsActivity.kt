@@ -55,21 +55,12 @@ import kotlin.math.sqrt
 private fun Context.isInputMethodEnabled(): Boolean {
     val packageName = packageName
     val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-
-    var found = false
-    for (imi in imm.enabledInputMethodList) {
-        if (packageName == imi.packageName) {
-            found = true
-        }
-    }
-
-    return found
+    return imm.enabledInputMethodList.any { packageName == it.packageName }
 }
 
 private fun Context.isDefaultIMECurrent(): Boolean {
     val value = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
-
-    return value.startsWith("$packageName/")
+    return value?.startsWith("$packageName/") == true
 }
 
 private fun Context.isDoublePackage(): Boolean {
@@ -77,7 +68,8 @@ private fun Context.isDoublePackage(): Boolean {
     val standalonePackage = "org.futo.inputmethod.latin"
     val playstorePackage = "org.futo.inputmethod.latin.playstore"
 
-    return (value.startsWith("$standalonePackage/") && packageName == playstorePackage) || (value.startsWith("$playstorePackage/") && packageName == standalonePackage)
+    return (value?.startsWith("$standalonePackage/") == true && packageName == playstorePackage) ||
+        (value?.startsWith("$playstorePackage/") == true && packageName == standalonePackage)
 }
 
 public const val IMPORT_RESOURCE_FILE_REQUEST = 71067309
@@ -231,6 +223,9 @@ class SettingsActivity : ComponentActivity(), DynamicThemeProviderOwner {
         lifecycleScope.launch {
             getSettingFlow(THEME_KEY).collect {
                 val themeOption = getThemeOption(this@SettingsActivity, it).orDefault(this@SettingsActivity)
+                if (this@SettingsActivity.themeOption.value?.key == themeOption.key) {
+                    return@collect
+                }
 
                 this@SettingsActivity.themeOption.value = themeOption
                 this@SettingsActivity.themeProvider = BasicThemeProvider(
