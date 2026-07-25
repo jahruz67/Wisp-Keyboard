@@ -894,7 +894,11 @@ class UixManager(private val latinIME: LatinIME) {
 
                 if(!needToUseExpandableSuggestionUi) {
                     CollapsibleSuggestionsBar(
-                        onCollapse = { toggleExpandAction() },
+                        onCollapse = {
+                            if (!dismissAddonKeyboard()) {
+                                toggleExpandAction()
+                            }
+                        },
                         onClose = { closeActionWindow() },
                         words = suggestedWordsOrNull,
                         showClose = currWindowActionWindow.value?.showCloseButton == true,

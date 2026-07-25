@@ -42,6 +42,9 @@ object AddonActionRegistry {
                 )
                 private var voiceCallback by mutableStateOf<((String?) -> Unit)?>(null)
 
+                override val showCloseButton: Boolean
+                    get() = false
+
                 override val fixedWindowHeightWhenKeyboardShown
                     get() = if (expanded) {
                         addon.manifest.action.expandedHeightDp.dp
