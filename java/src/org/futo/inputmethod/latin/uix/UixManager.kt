@@ -393,6 +393,10 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
         uixManager.toggleExpandAction(to)
     }
 
+    override fun hideActionKeyboard(addonId: String): Boolean {
+        return uixManager.dismissAddonKeyboard(addonId)
+    }
+
     override fun triggerSystemVoiceInput() {
         latinIME.latinIMELegacy.onCodeInput(
             Constants.CODE_SHORTCUT,
@@ -783,6 +787,7 @@ class UixManager(private val latinIME: LatinIME) {
         currWindowActionWindow.value = null
 
         mainKeyboardHidden.value = false
+        keyboardManagerForAction.unsetInputConnection()
 
         latinIME.onKeyboardShown()
 
@@ -797,6 +802,25 @@ class UixManager(private val latinIME: LatinIME) {
         if(!mainKeyboardHidden.value) {
             latinIME.onKeyboardShown()
         }
+    }
+
+    fun dismissAddonKeyboard(expectedAddonId: String? = null): Boolean {
+        // Inline keyboard dismissal is add-on action behavior. Other input overrides, such as the
+        // floating pre-edit editor, have their own lifecycle and must not hide the main keyboard.
+        val activeAddonId = currWindowAction.value?.addonId
+        if (
+            !isInputOverridden.value ||
+            activeAddonId == null ||
+            (expectedAddonId != null && expectedAddonId != activeAddonId) ||
+            currWindowActionWindow.value == null
+        ) {
+            return false
+        }
+
+        // Leave the action open and give its full panel back when its inline keyboard is dismissed.
+        keyboardManagerForAction.unsetInputConnection()
+        toggleExpandAction(false)
+        return true
     }
 
     @Composable
@@ -821,9 +845,17 @@ class UixManager(private val latinIME: LatinIME) {
             ) {
                 if (mainKeyboardHidden.value || isInputOverridden.value) {
                     ActionWindowBar(
-                        onBack = { closeActionWindow(true) },
+                        onBack = {
+                            if (!dismissAddonKeyboard()) {
+                                closeActionWindow(true)
+                            }
+                        },
                         canExpand = currWindowAction.value!!.canShowKeyboard,
-                        onExpand = { toggleExpandAction() },
+                        onExpand = {
+                            if (!dismissAddonKeyboard()) {
+                                toggleExpandAction()
+                            }
+                        },
                         windowTitleBar = { windowImpl.WindowTitleBar(this) }
                     )
                 }
@@ -835,6 +867,8 @@ class UixManager(private val latinIME: LatinIME) {
                             val fixedHeight = currWindowActionWindow.value?.let {
                                 if (mainKeyboardHidden.value) {
                                     it.fixedWindowHeight
+                                } else if (isInputOverridden.value) {
+                                    it.fixedWindowHeightWhenInputOverridden
                                 } else {
                                     it.fixedWindowHeightWhenKeyboardShown
                                 }
@@ -1277,7 +1311,9 @@ class UixManager(private val latinIME: LatinIME) {
     fun Content() {
         ProvidersAndWrapper {
             InputDarkener(isInputOverridden.value || isShowingActionEditor.value) {
-                closeActionWindow()
+                if (!dismissAddonKeyboard()) {
+                    closeActionWindow()
+                }
                 isShowingActionEditor.value = false
             }
 

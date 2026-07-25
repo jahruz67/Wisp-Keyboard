@@ -49,6 +49,9 @@ object AddonActionRegistry {
                         addon.manifest.action.compactHeightDp.dp
                     }
 
+                override val fixedWindowHeightWhenInputOverridden
+                    get() = addon.manifest.action.compactHeightDp.dp
+
                 @Composable
                 override fun windowName(): String = addon.manifest.name
 

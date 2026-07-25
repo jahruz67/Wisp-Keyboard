@@ -70,11 +70,25 @@ class AddonPanelWebView(context: Context) : WebView(context) {
     private var pendingInitialUrl: String? = null
 
     fun connectFocusedEditorToKeyboard(): Boolean {
-        requestFocus()
+        val callback = onInputConnectionCreated ?: return false
+        if (!hasFocus() && !requestFocus()) return false
         val editorInfo = EditorInfo()
         val inputConnection = super.onCreateInputConnection(editorInfo) ?: return false
-        onInputConnectionCreated?.invoke(inputConnection, editorInfo)
+        callback(inputConnection, editorInfo)
         return true
+    }
+
+    fun disconnectFocusedEditorFromKeyboard() {
+        evaluateJavascript(
+            "(function(){" +
+                "var element=document.activeElement;" +
+                "if(element&&element!==document.body&&typeof element.blur==='function'){" +
+                    "element.blur();" +
+                "}" +
+            "})();",
+            null,
+        )
+        clearFocus()
     }
 
     fun loadWhenSized(url: String) {
@@ -250,6 +264,7 @@ private class AddonJavascriptBridge(
                     "keyboard.startVoiceInput" -> startVoiceInput()
                     "ui.close" -> close()
                     "ui.showKeyboard" -> showKeyboard()
+                    "ui.hideKeyboard" -> hideKeyboard()
                     "ui.setExpanded" -> setExpanded(arguments.optBoolean("expanded", true))
                     "ui.getEnvironment" -> environment()
                     else -> error("Unsupported Wisp API operation: $operation")
@@ -350,6 +365,12 @@ private class AddonJavascriptBridge(
             "No editable add-on field is focused."
         }
         true
+    }
+
+    private suspend fun hideKeyboard(): Any = withContext(Dispatchers.Main) {
+        val keyboard = keyboardManager
+            ?: error("Keyboard dismissal is only available from a keyboard action.")
+        keyboard.hideActionKeyboard(addon.id)
     }
 
     private suspend fun networkFetch(arguments: JSONObject): JSONObject {
@@ -614,6 +635,7 @@ private const val BRIDGE_BOOTSTRAP = """
     ui: {
       close: () => call('ui.close', {}),
       showKeyboard: () => call('ui.showKeyboard', {}),
+      hideKeyboard: () => call('ui.hideKeyboard', {}),
       setExpanded: expanded => call('ui.setExpanded', {expanded: !!expanded}),
       getEnvironment: () => call('ui.getEnvironment', {})
     }
@@ -726,8 +748,14 @@ fun AddonWebPanel(
                 scope = scope,
             )
             addJavascriptInterface(bridge, "WispBridge")
-            onInputConnectionCreated = { inputConnection, editorInfo ->
-                keyboardManager?.overrideInputConnection(inputConnection, editorInfo)
+            onInputConnectionCreated = if (
+                keyboardManager != null && addon.manifest.action.canShowKeyboard
+            ) {
+                { inputConnection, editorInfo ->
+                    keyboardManager.overrideInputConnection(inputConnection, editorInfo)
+                }
+            } else {
+                null
             }
             loadWhenSized("https://$LOCAL_HOST/package/$entrypoint")
         }
@@ -737,6 +765,14 @@ fun AddonWebPanel(
         factory = { webView },
         modifier = modifier,
     )
+
+    var previousKeyboardShown by remember(webView) { mutableStateOf(keyboardShown) }
+    LaunchedEffect(webView, keyboardShown) {
+        if (previousKeyboardShown && !keyboardShown) {
+            webView.disconnectFocusedEditorFromKeyboard()
+        }
+        previousKeyboardShown = keyboardShown
+    }
 
     LaunchedEffect(webView, environment.toString()) {
         webView.evaluateJavascript(

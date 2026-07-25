@@ -145,6 +145,7 @@ const response = await wisp.network.fetch({
 await wisp.keyboard.insertText("hello");
 const transcript = await wisp.keyboard.startVoiceInput();
 await wisp.ui.showKeyboard();
+await wisp.ui.hideKeyboard();
 await wisp.ui.setExpanded(true);
 await wisp.ui.close();
 const environment = await wisp.ui.getEnvironment();
@@ -159,7 +160,11 @@ colors. The host also dispatches `wisp:environment` with the same object when th
 allowing a package panel to visually match native keyboard actions.
 
 Call `ui.showKeyboard()` from a focused editable field's `focus` handler to connect that field to
-Wisp's keyboard. The action manifest must set `canShowKeyboard` to `true`.
+Wisp's keyboard. The action manifest must set `canShowKeyboard` to `true`. While the field owns the
+keyboard, Wisp keeps the add-on in its compact-height panel so the focused editor remains visible.
+Dismissing the keyboard returns the add-on to its full panel instead of closing the add-on.
+Add-ons can call `ui.hideKeyboard()` after submitting a search or completing another focused action;
+the call only dismisses the inline keyboard and does not close the add-on.
 
 ### Network and GIF/media flow
 

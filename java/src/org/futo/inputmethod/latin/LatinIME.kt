@@ -797,11 +797,28 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         latinIMELegacy.updateFullscreenMode()
     }
 
+    private var consumedBackForInputOverride = false
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            // A key-up can be lost when the input window changes while handling back. Treat a
+            // non-repeat down as a new press so an old consumed state cannot swallow every back.
+            if ((event?.repeatCount ?: 0) == 0) {
+                consumedBackForInputOverride = false
+            }
+            if (consumedBackForInputOverride || uixManager.dismissAddonKeyboard()) {
+                consumedBackForInputOverride = true
+                return true
+            }
+        }
         return latinIMELegacy.onKeyDown(keyCode, event) || super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && consumedBackForInputOverride) {
+            consumedBackForInputOverride = false
+            return true
+        }
         return latinIMELegacy.onKeyUp(keyCode, event) || super.onKeyUp(keyCode, event)
     }
 

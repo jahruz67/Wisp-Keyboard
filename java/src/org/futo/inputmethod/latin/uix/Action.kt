@@ -66,6 +66,7 @@ interface KeyboardManagerForAction {
 
     fun closeActionWindow()
     fun forceActionWindowAboveKeyboard(to: Boolean)
+    fun hideActionKeyboard(addonId: String): Boolean
 
     fun triggerSystemVoiceInput()
 
@@ -135,6 +136,10 @@ abstract class ActionWindow {
     /** Optional compact height used while the action is shown above the keyboard. */
     open val fixedWindowHeightWhenKeyboardShown: Dp?
         get() = fixedWindowHeight
+
+    /** Optional focused height used while this action owns the keyboard input connection. */
+    open val fixedWindowHeightWhenInputOverridden: Dp?
+        get() = fixedWindowHeightWhenKeyboardShown
 
     @Composable
     abstract fun windowName(): String
