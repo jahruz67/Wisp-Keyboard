@@ -447,6 +447,7 @@ private class AddonJavascriptBridge(
                     connection.disconnect()
                 }
             }
+            error("Unreachable")
         }
     }
 
