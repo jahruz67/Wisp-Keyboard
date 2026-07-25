@@ -69,6 +69,14 @@ class AddonPanelWebView(context: Context) : WebView(context) {
     var onInputConnectionCreated: ((InputConnection, EditorInfo) -> Unit)? = null
     private var pendingInitialUrl: String? = null
 
+    fun connectFocusedEditorToKeyboard(): Boolean {
+        requestFocus()
+        val editorInfo = EditorInfo()
+        val inputConnection = super.onCreateInputConnection(editorInfo) ?: return false
+        onInputConnectionCreated?.invoke(inputConnection, editorInfo)
+        return true
+    }
+
     fun loadWhenSized(url: String) {
         if (width > 0 && height > 0) {
             loadUrl(url)
@@ -199,7 +207,7 @@ private open class LocalAddonWebViewClient(
 }
 
 private class AddonJavascriptBridge(
-    private val webView: WebView,
+    private val webView: AddonPanelWebView,
     private val addon: InstalledAddon,
     private val manager: AddonManager,
     private val keyboardManager: KeyboardManagerForAction?,
@@ -241,6 +249,7 @@ private class AddonJavascriptBridge(
                     "keyboard.insertMedia" -> insertMedia(arguments)
                     "keyboard.startVoiceInput" -> startVoiceInput()
                     "ui.close" -> close()
+                    "ui.showKeyboard" -> showKeyboard()
                     "ui.setExpanded" -> setExpanded(arguments.optBoolean("expanded", true))
                     "ui.getEnvironment" -> environment()
                     else -> error("Unsupported Wisp API operation: $operation")
@@ -328,6 +337,19 @@ private class AddonJavascriptBridge(
     private fun close(): Any {
         keyboardManager?.closeActionWindow()
         return true
+    }
+
+    private suspend fun showKeyboard(): Any = withContext(Dispatchers.Main) {
+        require(addon.manifest.action.canShowKeyboard) {
+            "This add-on action does not allow the keyboard to be shown."
+        }
+        require(keyboardManager != null) {
+            "Keyboard display is only available from a keyboard action."
+        }
+        require(webView.connectFocusedEditorToKeyboard()) {
+            "No editable add-on field is focused."
+        }
+        true
     }
 
     private suspend fun networkFetch(arguments: JSONObject): JSONObject {
@@ -590,6 +612,7 @@ private const val BRIDGE_BOOTSTRAP = """
     },
     ui: {
       close: () => call('ui.close', {}),
+      showKeyboard: () => call('ui.showKeyboard', {}),
       setExpanded: expanded => call('ui.setExpanded', {expanded: !!expanded}),
       getEnvironment: () => call('ui.getEnvironment', {})
     }

@@ -144,6 +144,7 @@ const response = await wisp.network.fetch({
 
 await wisp.keyboard.insertText("hello");
 const transcript = await wisp.keyboard.startVoiceInput();
+await wisp.ui.showKeyboard();
 await wisp.ui.setExpanded(true);
 await wisp.ui.close();
 const environment = await wisp.ui.getEnvironment();
@@ -156,6 +157,9 @@ and 5 MiB total per add-on.
 `ui.getEnvironment()` reports whether the keyboard is shown and supplies current keyboard/theme
 colors. The host also dispatches `wisp:environment` with the same object when those values change,
 allowing a package panel to visually match native keyboard actions.
+
+Call `ui.showKeyboard()` from a focused editable field's `focus` handler to connect that field to
+Wisp's keyboard. The action manifest must set `canShowKeyboard` to `true`.
 
 ### Network and GIF/media flow
 
