@@ -9,17 +9,35 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import java.io.File
 
+private const val DEFAULT_ADDON_MEDIA_MIME_TYPE = "application/octet-stream"
+private val VALID_ADDON_MEDIA_MIME_TYPE =
+    Regex("[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*")
+
+internal fun sanitizeAddonMediaMimeType(value: String?): String {
+    val mime = value
+        ?.substringBefore(';')
+        ?.trim()
+        ?.lowercase()
+        .orEmpty()
+    return mime.takeIf {
+        it.length <= 127 && VALID_ADDON_MEDIA_MIME_TYPE.matches(it)
+    } ?: DEFAULT_ADDON_MEDIA_MIME_TYPE
+}
+
+internal fun readAddonMediaMimeType(file: File): String {
+    val sidecar = File(file.parentFile, "${file.name}.mime")
+    val value = sidecar
+        .takeIf { it.isFile && it.length() <= 256L }
+        ?.readText()
+    return sanitizeAddonMediaMimeType(value)
+}
+
 class AddonMediaProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
     override fun getType(uri: Uri): String? {
         val file = resolve(uri) ?: return null
-        return File(file.parentFile, "${file.name}.mime")
-            .takeIf { it.isFile }
-            ?.readText()
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: "application/octet-stream"
+        return readAddonMediaMimeType(file)
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
@@ -56,7 +74,9 @@ class AddonMediaProvider : ContentProvider() {
         val handle = segments[1]
         if (!addonId.matches(Regex("[a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9_-]*)+"))) return null
         if (!handle.matches(Regex("[a-f0-9-]{36}"))) return null
-        val directory = AddonManager.get(context).mediaDirectory(addonId).canonicalFile
+        val manager = AddonManager.get(context)
+        if (manager.get(addonId) == null) return null
+        val directory = manager.mediaDirectory(addonId).canonicalFile
         val file = File(directory, handle).canonicalFile
         return file.takeIf {
             it.parentFile == directory && it.isFile
@@ -74,4 +94,3 @@ class AddonMediaProvider : ContentProvider() {
         selectionArgs: Array<out String>?,
     ): Int = throw UnsupportedOperationException()
 }
-

@@ -548,6 +548,8 @@ annotation class DebugOnly
 var UixManagerInstanceForDebug: UixManager? = null
 
 class UixManager(private val latinIME: LatinIME) {
+    private var isCollectingAddons = false
+
     init {
         @OptIn(DebugOnly::class)
         UixManagerInstanceForDebug = this
@@ -1546,20 +1548,34 @@ class UixManager(private val latinIME: LatinIME) {
         }
     }
 
+    private fun startCollectingAddons() {
+        if (!latinIME.isDirectBootUnlocked || isCollectingAddons) return
+        isCollectingAddons = true
+        latinIME.lifecycleScope.launch(Dispatchers.Main) {
+            AddonManager.get(latinIME).addons.collect { addons ->
+                currWindowAction.value?.let { activeAction ->
+                    val activeAddonId = activeAction.addonId
+                    if (activeAddonId != null) {
+                        val installed = addons.firstOrNull { it.id == activeAddonId }
+                        if (
+                            installed == null ||
+                            installed.manifest.versionCode != activeAction.addonVersionCode
+                        ) {
+                            closeActionWindow()
+                        }
+                    }
+                }
+                latinIME.invalidateKeyboard(true)
+            }
+        }
+    }
+
     fun onCreate() {
         initKeyboardLoadActions()
 
         isActionsExpanded.value = latinIME.getSettingBlocking(ActionBarExpanded)
 
-        latinIME.lifecycleScope.launch(Dispatchers.Main) {
-            AddonManager.get(latinIME).addons.collect { addons ->
-                val activeAddonId = currWindowAction.value?.addonId
-                if (activeAddonId != null && addons.none { it.id == activeAddonId }) {
-                    closeActionWindow()
-                }
-                latinIME.invalidateKeyboard(true)
-            }
-        }
+        startCollectingAddons()
 
         latinIME.lifecycleScope.launch(Dispatchers.Main) {
             WindowInfoTracker.getOrCreate(latinIME).windowLayoutInfo(latinIME).collect {
@@ -1573,6 +1589,7 @@ class UixManager(private val latinIME: LatinIME) {
 
     fun onPersistentStatesUnlocked() {
         initKeyboardLoadActions()
+        startCollectingAddons()
 
         persistentStates.forEach {
             latinIME.lifecycleScope.launch {

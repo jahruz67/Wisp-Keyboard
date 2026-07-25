@@ -8,6 +8,10 @@ object AddonPackage {
     const val MAX_ARCHIVE_BYTES = 25L * 1024L * 1024L
     const val MAX_EXTRACTED_BYTES = 100L * 1024L * 1024L
     const val MAX_ENTRIES = 1_000
+    private const val MAX_MANIFEST_BYTES = 256L * 1024L
+    private const val MAX_SETTINGS = 100
+    private const val MAX_SETTING_OPTIONS = 100
+    private const val MAX_NETWORK_ORIGINS = 50
 
     private val manifestJson = Json {
         ignoreUnknownKeys = false
@@ -15,6 +19,9 @@ object AddonPackage {
     }
     private val validId = Regex("[a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9_-]*)+")
     private val validKey = Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}")
+    private val forbiddenExtensions = setOf(
+        "aar", "apk", "class", "dex", "dll", "dylib", "exe", "jar", "java", "kt", "kts", "so",
+    )
 
     fun extractAndValidate(
         archive: File,
@@ -61,6 +68,9 @@ object AddonPackage {
                             "Could not create ${entry.name}."
                         }
                     } else {
+                        require(target.extension.lowercase() !in forbiddenExtensions) {
+                            "Executable or native code is not allowed in add-ons: ${entry.name}"
+                        }
                         require(
                             target.parentFile?.let { parent ->
                                 parent.mkdirs() || parent.isDirectory
@@ -89,6 +99,7 @@ object AddonPackage {
 
         val manifestFile = File(outputDirectory, "addon.json")
         require(manifestFile.isFile) { "addon.json must be at the root of the ZIP." }
+        require(manifestFile.length() <= MAX_MANIFEST_BYTES) { "addon.json is too large." }
         val manifest = manifestJson.decodeFromString<AddonManifest>(manifestFile.readText())
         validateManifest(manifest, outputDirectory, allowSystem)
         return manifest
@@ -97,7 +108,10 @@ object AddonPackage {
     fun readInstalled(directory: File): AddonManifest {
         val file = File(directory, "addon.json")
         require(file.isFile) { "Installed add-on has no addon.json." }
-        return manifestJson.decodeFromString(file.readText())
+        require(file.length() <= MAX_MANIFEST_BYTES) { "Installed addon.json is too large." }
+        return manifestJson.decodeFromString<AddonManifest>(file.readText()).also {
+            validateManifest(it, directory, allowSystem = true)
+        }
     }
 
     private fun validateManifest(
@@ -135,6 +149,12 @@ object AddonPackage {
         require(manifest.action.expandedHeightDp in manifest.action.compactHeightDp..600) {
             "expandedHeightDp must be between compactHeightDp and 600."
         }
+        require(manifest.settings.size <= MAX_SETTINGS) {
+            "Add-ons may declare at most $MAX_SETTINGS settings."
+        }
+        require(manifest.permissions.networkOrigins.size <= MAX_NETWORK_ORIGINS) {
+            "Add-ons may declare at most $MAX_NETWORK_ORIGINS network origins."
+        }
 
         validatePackageFile(root, manifest.icon, "icon")
         validatePackageFile(root, manifest.action.entrypoint, "action entrypoint")
@@ -146,13 +166,41 @@ object AddonPackage {
         manifest.settings.forEach { setting ->
             require(validKey.matches(setting.key)) { "Invalid setting key ${setting.key}." }
             require(settingKeys.add(setting.key)) { "Duplicate setting key ${setting.key}." }
-            require(setting.title.isNotBlank()) { "Setting ${setting.key} has no title." }
+            require(setting.title.isNotBlank() && setting.title.length <= 120) {
+                "Setting ${setting.key} must have a title of at most 120 characters."
+            }
+            require(setting.description == null || setting.description.length <= 500) {
+                "Setting ${setting.key} has a description that is too long."
+            }
+            require(
+                setting.default == null ||
+                    setting.default.toByteArray().size <= MAX_ADDON_STORED_VALUE_BYTES
+            ) {
+                "Setting ${setting.key} has a default value that is too large."
+            }
             if (setting.type == AddonSettingType.Select) {
-                require(setting.options.isNotEmpty()) {
+                require(setting.options.isNotEmpty() && setting.options.size <= MAX_SETTING_OPTIONS) {
                     "Select setting ${setting.key} must declare options."
                 }
                 require(setting.options.map { it.value }.toSet().size == setting.options.size) {
                     "Select setting ${setting.key} has duplicate option values."
+                }
+                require(setting.options.all {
+                    it.value.length <= 200 && it.label.isNotBlank() && it.label.length <= 120
+                }) {
+                    "Select setting ${setting.key} has an invalid option."
+                }
+                require(setting.default == null || setting.options.any { it.value == setting.default }) {
+                    "Select setting ${setting.key} has an invalid default."
+                }
+            } else {
+                require(setting.options.isEmpty()) {
+                    "Only select settings may declare options."
+                }
+            }
+            if (setting.type == AddonSettingType.Boolean) {
+                require(setting.default == null || setting.default == "true" || setting.default == "false") {
+                    "Boolean setting ${setting.key} must default to true or false."
                 }
             }
         }
@@ -164,17 +212,37 @@ object AddonPackage {
                 require(it.values.isNotEmpty()) {
                     "Setting ${setting.key} has an empty visibility condition."
                 }
+                val referenced = manifest.settings.first { definition -> definition.key == it.key }
+                if (referenced.type == AddonSettingType.Boolean) {
+                    require(it.values.all { value -> value == "true" || value == "false" }) {
+                        "Setting ${setting.key} has an invalid boolean visibility value."
+                    }
+                }
+                if (referenced.type == AddonSettingType.Select) {
+                    require(it.values.all { value ->
+                        referenced.options.any { option -> option.value == value }
+                    }) {
+                        "Setting ${setting.key} has an invalid select visibility value."
+                    }
+                }
             }
         }
 
-        manifest.permissions.networkOrigins.forEach { origin ->
-            val uri = java.net.URI(origin)
-            require(uri.scheme == "https" || (uri.scheme == "http" && manifest.permissions.allowInsecureHttp)) {
+        val normalizedOrigins = manifest.permissions.networkOrigins.map { origin ->
+            val parsed = parseAddonNetworkUrl(origin, originOnly = true)
+            require(
+                parsed.uri.scheme.equals("https", ignoreCase = true) ||
+                    (
+                        parsed.uri.scheme.equals("http", ignoreCase = true) &&
+                            manifest.permissions.allowInsecureHttp
+                        )
+            ) {
                 "Network origin $origin must use HTTPS."
             }
-            require(!uri.host.isNullOrBlank() && uri.path.orEmpty().let { it.isEmpty() || it == "/" }) {
-                "Network permissions must be origins without paths: $origin"
-            }
+            parsed.origin
+        }
+        require(normalizedOrigins.toSet().size == normalizedOrigins.size) {
+            "Network permissions contain duplicate origins."
         }
     }
 

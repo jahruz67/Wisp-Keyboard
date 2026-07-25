@@ -1,12 +1,27 @@
 package org.futo.inputmethod.latin
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.os.Build
+import android.os.Process
 import androidx.datastore.preferences.core.Preferences
 import androidx.core.content.edit
 //import androidx.work.Configuration
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.addons.AddonManager
+
+private fun Application.isMainApplicationProcess(): Boolean {
+    val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        Application.getProcessName()
+    } else {
+        (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+            .runningAppProcesses
+            ?.firstOrNull { it.pid == Process.myPid() }
+            ?.processName
+    }
+    return processName == applicationInfo.processName
+}
 
 class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
     //override val workManagerConfiguration: Configuration
@@ -46,7 +61,7 @@ class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
 
     override fun onCreate() {
         super.onCreate()
-        if (isDirectBootUnlocked) {
+        if (isDirectBootUnlocked && isMainApplicationProcess()) {
             AddonManager.get(this)
         }
     }

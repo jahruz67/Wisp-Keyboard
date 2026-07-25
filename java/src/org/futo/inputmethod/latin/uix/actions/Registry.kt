@@ -10,6 +10,7 @@ import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
+import org.futo.inputmethod.latin.uix.displayName
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.OFFLINE_MODE
@@ -46,6 +47,9 @@ private val BuiltinActionsMap = mapOf(
     "font_typer" to FontTyperAction,
     "translate" to org.futo.inputmethod.latin.uix.actions.translate.TranslateAction,
 )
+
+val MaximumAddonActionCount: Int =
+    Constants.CODE_ACTION_MAX - Constants.CODE_ACTION_0 + 1 - BuiltinActionsMap.size
 
 val AllActionsMap: Map<String, Action>
     get() = BuiltinActionsMap + AddonActionRegistry.actions
@@ -113,7 +117,7 @@ object ActionRegistry {
     }
 
     fun actionIdToName(context: Context, id: Int): String {
-        return context.getString(AllActions[id].name)
+        return AllActions[id].displayName(context)
     }
 
     fun actionStringIdToIdx(id: String): Int {

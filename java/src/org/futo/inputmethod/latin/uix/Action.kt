@@ -197,6 +197,7 @@ data class Action(
     val shownInEditor: Boolean = true,
 
     val settingsMenu: UserSettingsMenu? = null,
+    val addonVersionCode: Int? = null,
 )
 
 data class LangSpecAction(

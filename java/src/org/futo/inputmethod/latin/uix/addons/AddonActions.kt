@@ -32,6 +32,7 @@ object AddonActionRegistry {
         dynamicName = addon.manifest.name,
         dynamicIconPath = java.io.File(addon.directory, addon.manifest.icon).absolutePath,
         addonId = addon.id,
+        addonVersionCode = addon.manifest.versionCode,
         canShowKeyboard = addon.manifest.action.canShowKeyboard,
         simplePressImpl = null,
         windowImpl = { keyboardManager, _ ->

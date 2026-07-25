@@ -38,6 +38,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.uix.DialogRequestItem
@@ -47,12 +49,12 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URL
 import java.util.Locale
 import java.util.UUID
 
 private const val LOCAL_HOST = "wisp.addon"
+private const val MAX_HTML_BYTES = 10L * 1024L * 1024L
 private const val MAX_TEXT_RESPONSE_BYTES = 10L * 1024L * 1024L
 private const val MAX_MEDIA_RESPONSE_BYTES = 25L * 1024L * 1024L
 private const val MAX_MEDIA_CACHE_BYTES = 100L * 1024L * 1024L
@@ -96,8 +98,11 @@ private open class LocalAddonWebViewClient(
     private val addon: InstalledAddon,
     private val manager: AddonManager,
 ) : WebViewClient() {
-    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean =
-        request?.url?.host != LOCAL_HOST
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val uri = request?.url ?: return true
+        if (uri.scheme != "https" || uri.host != LOCAL_HOST) return true
+        return uri.pathSegments.firstOrNull() != "package"
+    }
 
     override fun shouldInterceptRequest(
         view: WebView?,
@@ -107,34 +112,40 @@ private open class LocalAddonWebViewClient(
         if (uri.scheme != "https" || uri.host != LOCAL_HOST) return blocked()
         val segments = uri.pathSegments
         if (segments.isEmpty()) return blocked()
+        if (segments.first() == "media" && request.isForMainFrame) return blocked()
 
         val file = when (segments.first()) {
             "package" -> resolveUnder(addon.directory, segments.drop(1).joinToString("/"))
             "media" -> resolveUnder(manager.mediaDirectory(addon.id), segments.drop(1).joinToString("/"))
             else -> null
         } ?: return blocked()
+        val isMedia = segments.first() == "media"
+        if (isMedia) file.setLastModified(System.currentTimeMillis())
 
-        val mime = if (segments.first() == "media") {
-            File(file.parentFile, "${file.name}.mime")
-                .takeIf { it.isFile }
-                ?.readText()
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
+        val mime = if (isMedia) {
+            readAddonMediaMimeType(file)
         } else {
             null
         } ?: MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(file.extension.lowercase())
             ?: java.net.URLConnection.guessContentTypeFromName(file.name)
             ?: "application/octet-stream"
+        val contentSecurityPolicy = if (isMedia) {
+            "default-src 'none'; img-src data:; style-src 'unsafe-inline'; " +
+                "script-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'"
+        } else {
+            "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; " +
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; " +
+                "object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; " +
+                "form-action 'none'"
+        }
         val headers = mapOf(
-            "Content-Security-Policy" to
-                "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; " +
-                    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; " +
-                    "object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'",
+            "Content-Security-Policy" to contentSecurityPolicy,
             "X-Content-Type-Options" to "nosniff",
             "Cache-Control" to "no-store",
         )
-        val stream = if (mime == "text/html") {
+        if (!isMedia && mime == "text/html" && file.length() > MAX_HTML_BYTES) return blocked()
+        val stream = if (!isMedia && mime == "text/html") {
             val html = file.readText()
             val injected = if (Regex("<head[^>]*>", RegexOption.IGNORE_CASE).containsMatchIn(html)) {
                 html.replaceFirst(
@@ -148,7 +159,15 @@ private open class LocalAddonWebViewClient(
         } else {
             file.inputStream()
         }
-        return WebResourceResponse(mime, null, 200, "OK", headers, stream)
+        val encoding = if (
+            mime.startsWith("text/") ||
+            mime in setOf("application/javascript", "application/json", "image/svg+xml")
+        ) {
+            "utf-8"
+        } else {
+            null
+        }
+        return WebResourceResponse(mime, encoding, 200, "OK", headers, stream)
     }
 
     override fun onSafeBrowsingHit(
@@ -190,6 +209,17 @@ private class AddonJavascriptBridge(
     private val environment: () -> JSONObject,
     private val scope: kotlinx.coroutines.CoroutineScope,
 ) {
+    private data class NetworkRequest(
+        val url: String,
+        val method: String,
+        val headers: Map<String, String>,
+        val body: String?,
+        val responseType: String,
+    )
+
+    private val permissionMutex = Mutex()
+    private var voiceRequestInProgress = false
+
     @JavascriptInterface
     fun postMessage(message: String) {
         scope.launch {
@@ -247,39 +277,52 @@ private class AddonJavascriptBridge(
 
     private suspend fun insertText(arguments: JSONObject): Any {
         require(addon.manifest.permissions.insertText) { "This add-on did not request text insertion." }
-        ensurePermission("insertText", "Insert text into the current app")
-        keyboardManager?.typeText(arguments.requireString("text"))
+        val manager = keyboardManager
             ?: error("Text insertion is only available from a keyboard action.")
+        val text = arguments.requireString("text")
+        ensurePermission("insertText", "Insert text into the current app")
+        manager.typeText(text)
         return true
     }
 
     private suspend fun insertMedia(arguments: JSONObject): Any {
         require(addon.manifest.permissions.insertMedia) { "This add-on did not request media insertion." }
-        ensurePermission("insertMedia", "Insert images or media into the current app")
+        val keyboard = keyboardManager
+            ?: error("Media insertion is only available from a keyboard action.")
         val handle = arguments.requireString("handle")
+        arguments.requireString("mimeType")
         require(handle.matches(Regex("[a-f0-9-]{36}"))) { "Invalid media handle." }
         val file = File(manager.mediaDirectory(addon.id), handle).canonicalFile
         require(file.parentFile == manager.mediaDirectory(addon.id).canonicalFile && file.isFile) {
             "Media handle does not exist."
         }
-        val mime = arguments.requireString("mimeType")
+        val mime = readAddonMediaMimeType(file)
+        ensurePermission("insertMedia", "Insert images or media into the current app")
         val uri = Uri.Builder()
             .scheme("content")
             .authority("${BuildConfig.APPLICATION_ID}.addons")
             .appendPath(addon.id)
             .appendPath(handle)
             .build()
-        return keyboardManager?.typeUri(uri, listOf(mime))
-            ?: error("Media insertion is only available from a keyboard action.")
+        require(keyboard.typeUri(uri, listOf(mime))) {
+            "The current app did not accept media insertion."
+        }
+        return true
     }
 
     private suspend fun startVoiceInput(): Any? {
         require(addon.manifest.permissions.voiceInput) { "This add-on did not request voice input." }
-        ensurePermission("voiceInput", "Capture a voice transcription")
         val handler = requestVoice ?: error("Voice input is only available from a keyboard action.")
-        val result = CompletableDeferred<String?>()
-        handler { result.complete(it) }
-        return result.await()
+        require(!voiceRequestInProgress) { "A voice input request is already active." }
+        voiceRequestInProgress = true
+        try {
+            ensurePermission("voiceInput", "Capture a voice transcription")
+            val result = CompletableDeferred<String?>()
+            handler { result.complete(it) }
+            return result.await()
+        } finally {
+            voiceRequestInProgress = false
+        }
     }
 
     private fun close(): Any {
@@ -288,114 +331,181 @@ private class AddonJavascriptBridge(
     }
 
     private suspend fun networkFetch(arguments: JSONObject): JSONObject {
-        val requestedUrl = arguments.requireString("url")
-        val initialOrigin = validateNetworkUrl(requestedUrl)
+        val request = parseNetworkRequest(arguments)
+        val initialOrigin = validateNetworkUrl(request.url)
         ensurePermission("network:$initialOrigin", "Connect to $initialOrigin")
 
         return withContext(Dispatchers.IO) {
-            var url = URL(requestedUrl)
+            var url = URL(request.url)
+            var method = request.method
+            var body = request.body
+            var includeSensitiveHeaders = true
             var redirects = 0
             while (true) {
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    requestMethod = arguments.optString("method", "GET").uppercase()
-                    connectTimeout = 10_000
-                    readTimeout = 15_000
-                    setRequestProperty("User-Agent", "WispKeyboardAddon/${addon.manifest.versionName}")
-                    arguments.optJSONObject("headers")?.let { headers ->
-                        headers.keys().forEach { key ->
-                            require(key.lowercase() !in setOf("host", "cookie", "origin")) {
-                                "Header $key is controlled by the host."
+                val connection = (url.openConnection() as HttpURLConnection)
+                try {
+                    connection.apply {
+                        instanceFollowRedirects = false
+                        requestMethod = method
+                        connectTimeout = 10_000
+                        readTimeout = 15_000
+                        setRequestProperty("User-Agent", "WispKeyboardAddon/${addon.manifest.versionName}")
+                        request.headers.forEach { (key, value) ->
+                            if (
+                                includeSensitiveHeaders ||
+                                key.lowercase() !in setOf("authorization", "proxy-authorization")
+                            ) {
+                                setRequestProperty(key, value)
                             }
-                            setRequestProperty(key, headers.getString(key))
+                        }
+                        body?.let { requestBody ->
+                            doOutput = true
+                            outputStream.use {
+                                it.write(requestBody.toByteArray())
+                            }
                         }
                     }
-                    if (arguments.has("body")) {
-                        doOutput = true
-                        outputStream.use {
-                            it.write(arguments.getString("body").toByteArray())
-                        }
-                    }
-                }
 
-                val status = connection.responseCode
-                if (status in 300..399) {
-                    require(redirects++ < 5) { "Too many redirects." }
-                    val location = connection.getHeaderField("Location")
-                        ?: error("Redirect has no Location header.")
-                    val redirected = URL(url, location)
-                    val redirectedOrigin = validateNetworkUrl(redirected.toString())
-                    require(
-                        redirectedOrigin == initialOrigin ||
-                            manager.hasGrant(addon.id, "network:$redirectedOrigin")
-                    ) {
-                        "Cross-origin redirect to $redirectedOrigin was not approved."
+                    val status = connection.responseCode
+                    if (status in setOf(301, 302, 303, 307, 308)) {
+                        require(redirects++ < 5) { "Too many redirects." }
+                        val location = connection.getHeaderField("Location")
+                            ?: error("Redirect has no Location header.")
+                        val redirected = URL(url, location)
+                        val redirectedOrigin = validateNetworkUrl(redirected.toString())
+                        require(
+                            redirectedOrigin == initialOrigin ||
+                                manager.hasGrant(addon.id, "network:$redirectedOrigin")
+                        ) {
+                            "Cross-origin redirect to $redirectedOrigin was not approved."
+                        }
+                        if (redirectedOrigin != initialOrigin) includeSensitiveHeaders = false
+                        if (status == 303 || (status in 301..302 && method == "POST")) {
+                            method = "GET"
+                            body = null
+                        }
+                        url = redirected
+                        continue
                     }
-                    url = redirected
-                    connection.disconnect()
-                    continue
-                }
 
-                val stream = if (status >= 400) connection.errorStream else connection.inputStream
-                val responseType = arguments.optString("responseType", "text")
-                if (responseType == "media") {
-                    val handle = UUID.randomUUID().toString()
-                    val target = File(manager.mediaDirectory(addon.id), handle)
-                    stream.use { input ->
-                        target.outputStream().use { output ->
-                            copyLimited(input, output, MAX_MEDIA_RESPONSE_BYTES)
+                    val stream = (
+                        if (status >= 400) connection.errorStream else connection.inputStream
+                        ) ?: ByteArrayInputStream(ByteArray(0))
+                    if (request.responseType == "media") {
+                        val handle = UUID.randomUUID().toString()
+                        val target = File(manager.mediaDirectory(addon.id), handle)
+                        val sidecar = File(target.parentFile, "$handle.mime")
+                        try {
+                            stream.use { input ->
+                                target.outputStream().use { output ->
+                                    copyLimited(input, output, MAX_MEDIA_RESPONSE_BYTES)
+                                }
+                            }
+                            val mime = sanitizeAddonMediaMimeType(connection.contentType)
+                            sidecar.writeText(mime)
+                            pruneMediaCache(manager.mediaDirectory(addon.id))
+                            return@withContext JSONObject()
+                                .put("status", status)
+                                .put("handle", handle)
+                                .put("mimeType", mime)
+                                .put("previewUrl", "https://$LOCAL_HOST/media/$handle")
+                        } catch (e: Exception) {
+                            target.delete()
+                            sidecar.delete()
+                            throw e
                         }
                     }
-                    val mime = connection.contentType?.substringBefore(';') ?: "application/octet-stream"
-                    File(target.parentFile, "$handle.mime").writeText(mime)
-                    pruneMediaCache(manager.mediaDirectory(addon.id))
+
+                    val bytes = stream.use { readLimited(it, MAX_TEXT_RESPONSE_BYTES) }
                     return@withContext JSONObject()
                         .put("status", status)
-                        .put("handle", handle)
-                        .put("mimeType", mime)
-                        .put("previewUrl", "https://$LOCAL_HOST/media/$handle")
+                        .put("contentType", connection.contentType ?: "")
+                        .put("body", bytes.decodeToString())
+                } finally {
+                    connection.disconnect()
                 }
-
-                val bytes = stream.use { readLimited(it, MAX_TEXT_RESPONSE_BYTES) }
-                return@withContext JSONObject()
-                    .put("status", status)
-                    .put("contentType", connection.contentType ?: "")
-                    .put("body", bytes.decodeToString())
             }
-            error("Unreachable")
         }
     }
 
+    private fun parseNetworkRequest(arguments: JSONObject): NetworkRequest {
+        val method = arguments.optString("method", "GET").uppercase()
+        require(
+            method in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
+        ) {
+            "Unsupported HTTP method: $method"
+        }
+        val body = if (arguments.has("body")) arguments.requireString("body") else null
+        require(body == null || method !in setOf("GET", "HEAD")) {
+            "$method requests cannot include a body."
+        }
+        val responseType = arguments.optString("responseType", "text")
+        require(responseType == "text" || responseType == "media") {
+            "responseType must be text or media."
+        }
+        val headers = buildMap {
+            arguments.optJSONObject("headers")?.let { json ->
+                require(json.length() <= 64) { "Too many request headers." }
+                json.keys().forEach { key ->
+                    require(key.matches(Regex("[A-Za-z0-9-]{1,100}"))) {
+                        "Invalid request header name."
+                    }
+                    require(
+                        key.lowercase() !in setOf(
+                            "connection",
+                            "content-length",
+                            "cookie",
+                            "host",
+                            "origin",
+                            "transfer-encoding",
+                        )
+                    ) {
+                        "Header $key is controlled by the host."
+                    }
+                    val value = json.getString(key)
+                    require(value.length <= 8_192 && '\r' !in value && '\n' !in value) {
+                        "Invalid value for header $key."
+                    }
+                    put(key, value)
+                }
+            }
+        }
+        return NetworkRequest(
+            url = arguments.requireString("url"),
+            method = method,
+            headers = headers,
+            body = body,
+            responseType = responseType,
+        )
+    }
+
     private fun validateNetworkUrl(value: String): String {
-        val uri = URI(value)
-        require(uri.scheme == "https" || uri.scheme == "http") { "Only HTTP(S) requests are supported." }
-        require(!uri.host.isNullOrBlank() && uri.userInfo == null) { "Invalid network URL." }
-        if (uri.scheme == "http") {
+        val parsed = parseAddonNetworkUrl(value, originOnly = false)
+        if (parsed.uri.scheme.equals("http", ignoreCase = true)) {
             require(addon.manifest.permissions.allowInsecureHttp) {
                 "This add-on did not request insecure HTTP access."
             }
         }
-        val port = if (uri.port == -1) "" else ":${uri.port}"
-        val origin = "${uri.scheme.lowercase()}://${uri.host.lowercase()}$port"
         val fixedOrigins = addon.manifest.permissions.networkOrigins.map {
-            val fixed = URI(it)
-            val fixedPort = if (fixed.port == -1) "" else ":${fixed.port}"
-            "${fixed.scheme.lowercase()}://${fixed.host.lowercase()}$fixedPort"
+            parseAddonNetworkUrl(it, originOnly = true).origin
         }
-        require(origin in fixedOrigins || addon.manifest.permissions.allowUserOrigins) {
-            "Network origin $origin is not declared by this add-on."
+        require(parsed.origin in fixedOrigins || addon.manifest.permissions.allowUserOrigins) {
+            "Network origin ${parsed.origin} is not declared by this add-on."
         }
-        return origin
+        return parsed.origin
     }
 
     private suspend fun ensurePermission(capability: String, description: String) {
-        if (manager.hasGrant(addon.id, capability)) return
-        require(requestPermission(capability, description)) { "Permission was denied." }
-        manager.setGrant(addon.id, capability, true)
+        permissionMutex.withLock {
+            if (!manager.hasGrant(addon.id, capability)) {
+                require(requestPermission(capability, description)) { "Permission was denied." }
+                manager.setGrant(addon.id, capability, true)
+            }
+        }
     }
 
     private fun respond(id: String, success: Boolean, value: Any?) {
-        val payload = JSONObject().put("value", value).toString()
+        val payload = JSONObject().put("value", value ?: JSONObject.NULL).toString()
         val script = "window.__wispResolve(" +
             "${JSONObject.quote(id)},$success,${JSONObject.quote(payload)});"
         webView.post { webView.evaluateJavascript(script, null) }
@@ -552,7 +662,7 @@ fun AddonWebPanel(
         deferred.await()
     }
 
-    val webView = remember(addon.id, entrypoint) {
+    val webView = remember(addon.id, addon.manifest.versionCode, entrypoint) {
         AddonPanelWebView(context).apply {
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false

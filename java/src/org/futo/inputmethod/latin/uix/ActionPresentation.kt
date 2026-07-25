@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import org.futo.inputmethod.latin.uix.addons.decodeAddonIcon
+import java.io.File
 
 fun Action.displayName(context: Context): String =
     dynamicName ?: context.getString(name)
@@ -16,7 +17,8 @@ fun Action.displayName(context: Context): String =
 fun Action.displayPainter(): Painter {
     val path = dynamicIconPath
     if (path != null) {
-        val bitmap = remember(path) {
+        val lastModified = File(path).lastModified()
+        val bitmap = remember(path, lastModified) {
             decodeAddonIcon(path)?.asImageBitmap()
         }
         if (bitmap != null) return remember(bitmap) { BitmapPainter(bitmap) }

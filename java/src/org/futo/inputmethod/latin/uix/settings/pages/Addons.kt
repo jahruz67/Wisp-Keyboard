@@ -75,7 +75,9 @@ private fun addonIcon(addon: InstalledAddon): Painter {
     val path = remember(addon.id, addon.manifest.versionCode) {
         java.io.File(addon.directory, addon.manifest.icon).absolutePath
     }
-    val bitmap = remember(path) { decodeAddonIcon(path)?.asImageBitmap() }
+    val bitmap = remember(path, addon.manifest.versionCode) {
+        decodeAddonIcon(path)?.asImageBitmap()
+    }
     return bitmap?.let { remember(it) { BitmapPainter(it) } }
         ?: painterResource(R.drawable.ic_addon)
 }
@@ -169,8 +171,10 @@ fun AddonsScreen(navController: NavHostController) {
     prepared?.let { pending ->
         AlertDialog(
             onDismissRequest = {
-                manager.cancel(pending)
-                prepared = null
+                if (!importing) {
+                    manager.cancel(pending)
+                    prepared = null
+                }
             },
             title = { Text(context.getString(R.string.addons_install_title, pending.manifest.name)) },
             text = {
@@ -182,23 +186,30 @@ fun AddonsScreen(navController: NavHostController) {
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    importing = true
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) { manager.install(pending) }
-                        prepared = null
-                        importing = false
-                        result.exceptionOrNull()?.let {
-                            error = it.message ?: context.getString(R.string.addons_install_failed)
+                Button(
+                    enabled = !importing,
+                    onClick = {
+                        importing = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) { manager.install(pending) }
+                            prepared = null
+                            importing = false
+                            result.exceptionOrNull()?.let {
+                                error = it.message
+                                    ?: context.getString(R.string.addons_install_failed)
+                            }
                         }
-                    }
-                }) { Text(context.getString(R.string.addons_install)) }
+                    },
+                ) { Text(context.getString(R.string.addons_install)) }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    manager.cancel(pending)
-                    prepared = null
-                }) { Text(context.getString(R.string.cancel)) }
+                TextButton(
+                    enabled = !importing,
+                    onClick = {
+                        manager.cancel(pending)
+                        prepared = null
+                    },
+                ) { Text(context.getString(R.string.cancel)) }
             },
         )
     }
@@ -257,7 +268,7 @@ private fun AddonTitleBar(
 
 @Composable
 private fun NativeAddonSettings(addon: InstalledAddon, manager: AddonManager) {
-    val values = remember(addon.id) {
+    val values = remember(addon.id, addon.manifest.versionCode) {
         mutableStateMapOf<String, String>().apply {
             addon.manifest.settings.forEach { setting ->
                 this[setting.key] = manager.getSetting(addon.id, setting.key)
@@ -308,7 +319,7 @@ private fun NativeAddonSettings(addon: InstalledAddon, manager: AddonManager) {
                 }
 
                 else -> {
-                    var text by remember(addon.id, setting.key) {
+                    var text by remember(addon.id, addon.manifest.versionCode, setting.key) {
                         mutableStateOf(values[setting.key].orEmpty())
                     }
                     LaunchedEffect(text) {

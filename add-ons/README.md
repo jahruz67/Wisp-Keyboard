@@ -150,7 +150,8 @@ const environment = await wisp.ui.getEnvironment();
 ```
 
 `settings` keys must be declared in the manifest. `storage` keys are private to the add-on and may
-contain only letters, digits, `_`, `.`, and `-`.
+contain only letters, digits, `_`, `.`, and `-`. Storage is limited to 256 keys, 1 MiB per value,
+and 5 MiB total per add-on.
 
 `ui.getEnvironment()` reports whether the keyboard is shown and supplies current keyboard/theme
 colors. The host also dispatches `wisp:environment` with the same object when those values change,
