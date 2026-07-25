@@ -65,6 +65,25 @@ private data class PermissionRequest(
 
 class AddonPanelWebView(context: Context) : WebView(context) {
     var onInputConnectionCreated: ((InputConnection, EditorInfo) -> Unit)? = null
+    private var pendingInitialUrl: String? = null
+
+    fun loadWhenSized(url: String) {
+        if (width > 0 && height > 0) {
+            loadUrl(url)
+        } else {
+            pendingInitialUrl = url
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) {
+            pendingInitialUrl?.let { url ->
+                pendingInitialUrl = null
+                loadUrl(url)
+            }
+        }
+    }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         return super.onCreateInputConnection(outAttrs)?.also {
@@ -576,7 +595,7 @@ fun AddonWebPanel(
             onInputConnectionCreated = { inputConnection, editorInfo ->
                 keyboardManager?.overrideInputConnection(inputConnection, editorInfo)
             }
-            loadUrl("https://$LOCAL_HOST/package/$entrypoint")
+            loadWhenSized("https://$LOCAL_HOST/package/$entrypoint")
         }
     }
 
