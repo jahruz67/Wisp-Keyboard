@@ -61,11 +61,23 @@ val AllActionKeys: List<String>
 val ActionIdToInt: Map<String, Int>
     get() = AllActionsMap.entries.associate { it.key to AllActions.indexOf(it.value) }
 
+private fun Action.registeredId(): String? {
+    val stableAddonId = addonId?.let { "addon:$it" }
+    if (stableAddonId != null && AllActionsMap.containsKey(stableAddonId)) {
+        return stableAddonId
+    }
+
+    return AllActionsMap.entries.firstOrNull { it.value == this }?.key
+}
+
+private fun Action.registeredIndex(): Int =
+    registeredId()?.let { AllActionKeys.indexOf(it) } ?: -1
+
 val Action.keyCode
-    get() = AllActions.indexOf(this) + Constants.CODE_ACTION_0
+    get() = registeredIndex() + Constants.CODE_ACTION_0
 
 val Action.keyCodeAlt
-    get() = AllActions.indexOf(this) + Constants.CODE_ALT_ACTION_0
+    get() = registeredIndex() + Constants.CODE_ALT_ACTION_0
 
 // Name integers of actions must be unique
 private fun List<Action>.verifyNamesAreUnique(): List<Action> {
@@ -109,7 +121,7 @@ object ActionRegistry {
     }
 
     fun actionToStringId(action: Action): String {
-        return AllActionsMap.entries.find { it.value == action }?.key ?: ""
+        return action.registeredId() ?: ""
     }
 }
 
@@ -156,7 +168,9 @@ fun ActionEditorItem.toKey(): String {
 }
 
 fun ActionEditorItem.stringRepresentation(): String = when(this) {
-    is ActionEditorItem.Item -> AllActionsMap.entries.find { it.value == action }!!.key
+    is ActionEditorItem.Item -> ActionRegistry.actionToStringId(action).also {
+        require(it.isNotEmpty()) { "Cannot serialize an unregistered action." }
+    }
     is ActionEditorItem.Separator -> "_SEP_" + this.category.name
 }
 
@@ -265,7 +279,9 @@ fun List<ActionEditorItem>.ensureWellFormed(): List<ActionEditorItem> {
 }
 
 fun List<Action>.serializeActionListToString(): String = joinToString(separator = ",") { action ->
-    AllActionsMap.entries.find { it.value == action }!!.key
+    ActionRegistry.actionToStringId(action).also {
+        require(it.isNotEmpty()) { "Cannot serialize an unregistered action." }
+    }
 }
 
 fun String.toActionList(): List<Action> = split(",").mapNotNull { AllActionsMap[it.trim()] }
