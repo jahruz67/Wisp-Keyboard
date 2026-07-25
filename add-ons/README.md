@@ -88,6 +88,8 @@ Only repository-bundled packages may set `"system": true`.
 - `icon`, action `entrypoint`, and optional `settingsEntrypoint` are package-relative files.
 - `preferredHeight` is `compact`, `expanded`, or `adaptive`.
 - `compactHeightDp` and `expandedHeightDp` control adaptive action-panel heights.
+- `canShowKeyboard` controls whether action-page editors can connect to Wisp through
+  `ui.showKeyboard()`. It has no effect on an optional settings page.
 - `system` must be false or omitted in imported packages.
 
 ### Native settings
@@ -151,6 +153,25 @@ await wisp.ui.close();
 const environment = await wisp.ui.getEnvironment();
 ```
 
+The API surface is:
+
+| Method | Resolves with | Availability |
+| --- | --- | --- |
+| `settings.get(key)` | Declared value or `null` | Action and settings pages |
+| `settings.set(key, value)` | `true` | Action and settings pages |
+| `storage.get(key)` | Stored value or `null` | Action and settings pages |
+| `storage.set(key, value)` | `true` | Action and settings pages |
+| `storage.remove(key)` | `true` | Action and settings pages |
+| `network.fetch(request)` | Text or media response object | Action and settings pages |
+| `keyboard.insertText(text)` | `true` | Action page with permission |
+| `keyboard.insertMedia(handle, mimeType)` | `true` | Action page with permission |
+| `keyboard.startVoiceInput()` | Transcript or `null` | Action page with permission |
+| `ui.showKeyboard()` | `true` | Action page with `canShowKeyboard` |
+| `ui.hideKeyboard()` | Whether an inline keyboard was dismissed | Action page |
+| `ui.setExpanded(expanded)` | Completion acknowledgement | Action page |
+| `ui.close()` | `true` | Action page |
+| `ui.getEnvironment()` | Environment object | Action and settings pages |
+
 `settings` keys must be declared in the manifest. `storage` keys are private to the add-on and may
 contain only letters, digits, `_`, `.`, and `-`. Storage is limited to 256 keys, 1 MiB per value,
 and 5 MiB total per add-on.
@@ -159,12 +180,55 @@ and 5 MiB total per add-on.
 colors. The host also dispatches `wisp:environment` with the same object when those values change,
 allowing a package panel to visually match native keyboard actions.
 
-Call `ui.showKeyboard()` from a focused editable field's `focus` handler to connect that field to
-Wisp's keyboard. The action manifest must set `canShowKeyboard` to `true`. While the field owns the
-keyboard, Wisp keeps the add-on in its compact-height panel so the focused editor remains visible.
-Dismissing the keyboard returns the add-on to its full panel instead of closing the add-on.
-Add-ons can call `ui.hideKeyboard()` after submitting a search or completing another focused action;
-the call only dismisses the inline keyboard and does not close the add-on.
+```js
+const environment = await wisp.ui.getEnvironment();
+// {
+//   keyboardShown: false,
+//   dark: true,
+//   keyboardContainer: "#......",
+//   onKeyboardContainer: "#......",
+//   primary: "#......",
+//   onSurface: "#......",
+//   error: "#......",
+//   surfaceContainerHighest: "#......"
+// }
+
+window.addEventListener("wisp:environment", event => {
+  document.documentElement.dataset.theme = event.detail.dark ? "dark" : "light";
+});
+```
+
+### Focused keyboard flow
+
+Call `ui.showKeyboard()` only after an editable element is focused. The action manifest must set
+`canShowKeyboard` to `true`.
+
+```js
+const query = document.querySelector("#query");
+
+query.addEventListener("focus", async () => {
+  try {
+    await wisp.ui.showKeyboard();
+  } catch (error) {
+    console.error(error);
+  }
+});
+
+async function submit() {
+  await search(query.value);
+  await wisp.ui.hideKeyboard();
+}
+```
+
+While the field owns the keyboard, Wisp keeps the add-on at `compactHeightDp` so the editor remains
+visible. Dismissing the keyboard blurs the connected field and restores the action panel without
+closing it. Back, the panel header control, tapping outside the action, and `ui.hideKeyboard()` all
+dismiss this inline keyboard without closing the panel. A later interaction uses the panel's normal
+close or resize behavior.
+
+The host disconnects the add-on input connection when the panel is disposed or the keyboard is
+dismissed. Add-ons should not retain focus as application state; restore focus only after an
+explicit user interaction.
 
 ### Network and GIF/media flow
 
@@ -176,6 +240,21 @@ additional origin at first use (for example, a user-entered self-hosted server).
 `allowInsecureHttp` permits HTTP only after the extra warning. Redirects are limited and
 cross-origin redirects require an existing grant. `Host`, `Cookie`, and `Origin` request headers
 are controlled by Wisp.
+
+`network.fetch` accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`. `GET` and
+`HEAD` cannot include a body. `responseType` must be `text` (the default) or `media`. A text
+response is limited to 10 MiB and has this shape:
+
+```js
+{
+  status: 200,
+  contentType: "application/json; charset=utf-8",
+  body: "{\"results\":[]}"
+}
+```
+
+Requests may follow at most five HTTP redirects. Redirects to another origin must already be
+approved, and Wisp removes authorization headers when crossing origins.
 
 For a GIF or image, request an opaque cached handle:
 
@@ -190,7 +269,22 @@ await wisp.keyboard.insertMedia(media.handle, media.mimeType);
 ```
 
 An add-on can use only handles it downloaded. Individual media responses are limited to 25 MiB and
-each add-on has a 100 MiB least-recently-used cache.
+each add-on has a 100 MiB least-recently-used cache. Wisp records and validates the downloaded
+media type; the `mimeType` argument supplied to `insertMedia` is not trusted as an override. The
+Promise rejects if the current editor does not accept the media.
+
+## Updates and lifecycle
+
+`id` is the stable identity for settings, storage, permission grants, media, and action placement.
+Increase `versionCode` whenever the package contents change. Wisp recreates a panel when its
+installed version changes, so add-ons must persist durable state through `wisp.settings` or
+`wisp.storage` instead of relying on page globals.
+
+Bundled add-ons are replaced when a package with the same ID has a different `versionCode`, and
+sensitive permission grants are cleared so the updated package asks again at first use. An open
+action is closed if its add-on is removed or replaced, preventing an old WebView from continuing
+against new package files. Imported user add-ons currently cannot replace an installed package;
+remove the existing add-on before importing the new ZIP.
 
 ## Security behavior
 
