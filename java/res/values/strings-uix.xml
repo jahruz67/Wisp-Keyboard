@@ -532,6 +532,8 @@
     <string name="theme_settings_custom_theme_delete_cancel">Cancel</string>
     <string name="theme_settings_add_new_theme">Add new theme</string>
     <string name="theme_settings_add_new_theme_question">Create a new theme from a picture, or add a downloaded ZIP theme?</string>
+    <string name="theme_settings_warning_newer_version">This theme may require a newer version of FUTO Keyboard than the one you have. If you\'re a theme developer, check the error log below.</string>
+    <string name="theme_settings_visit_theme_store">Explore themes online</string>
 
     <!-- Theme customizer -->
     <string name="theme_customizer_select_background_image_button">Select picture</string>
@@ -725,7 +727,8 @@ Default is %1$s</string>
     <string name="personal_dictionary_words_list_header">Words</string>
     <string name="personal_dictionary_cancel_action">Cancel</string>
     <string name="personal_dictionary_delete_additional_file">Delete extra dictionary file?</string>
-    <string name="personal_dictionary_delete_additional_file_text">Are you sure you want to delete the additional dictionary file for %s?</string>
+    <!-- %1$s will be replaced with the custom dictionary name -->
+    <string name="personal_dictionary_delete_additional_file_text">%1$s will be deleted</string>
     <!-- Add-on strings -->
     <string name="addons_settings_title">Add-ons</string>
     <string name="addons_settings_subtitle">Manage extensions and extra tools</string>
