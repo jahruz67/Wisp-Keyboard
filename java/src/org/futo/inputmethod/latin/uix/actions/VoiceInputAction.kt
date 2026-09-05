@@ -409,6 +409,7 @@ private class GroqVoiceInputActionWindow(
     private var recordingJob: kotlinx.coroutines.Job? = null
     private var audioBuffer = FloatArray(0)
     private var hasStarted = false
+    @Volatile
     private var stopRequested = false
     private var wasMediaPlaying = false
 
@@ -516,7 +517,7 @@ private class GroqVoiceInputActionWindow(
         recordingJob = manager.getLifecycleScope().launch(Dispatchers.Default) {
             try {
                 recordAudio()
-                // Normal completion (timed out or stopRequested was set)
+                // Normal completion after the user requested that recording stop.
                 if (audioBuffer.isNotEmpty()) {
                     withContext(Dispatchers.Main) {
                         currentViewState = CurrentView.LoadingCircle
@@ -573,17 +574,15 @@ private class GroqVoiceInputActionWindow(
 
             val shortBuffer = ShortArray(1600)
             var totalSamples = 0
-            val maxSamples = sampleRate * 120 // 2 minutes max
-            val recordedSamples = FloatArray(maxSamples)
+            val recordedChunks = mutableListOf<FloatArray>()
             var hasTalked = false
 
-            while (totalSamples < maxSamples && !stopRequested) {
+            while (!stopRequested) {
                 yield()
-                val samplesToRead = minOf(shortBuffer.size, maxSamples - totalSamples)
                 val nRead = recorder.read(
                     shortBuffer,
                     0,
-                    samplesToRead,
+                    shortBuffer.size,
                     android.media.AudioRecord.READ_NON_BLOCKING
                 )
                 if (nRead <= 0) {
@@ -592,11 +591,13 @@ private class GroqVoiceInputActionWindow(
                 }
 
                 var sumSq = 0.0
+                val chunk = FloatArray(nRead)
                 for (i in 0 until nRead) {
                     val floatSample = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
-                    recordedSamples[totalSamples + i] = floatSample
+                    chunk[i] = floatSample
                     sumSq += floatSample * floatSample
                 }
+                recordedChunks.add(chunk)
                 totalSamples += nRead
 
                 val rms = sqrt(sumSq / nRead).toFloat()
@@ -616,7 +617,13 @@ private class GroqVoiceInputActionWindow(
                 }
             }
 
-            audioBuffer = recordedSamples.copyOf(totalSamples)
+            audioBuffer = FloatArray(totalSamples).also { recordedSamples ->
+                var destinationOffset = 0
+                recordedChunks.forEach { chunk ->
+                    chunk.copyInto(recordedSamples, destinationOffset)
+                    destinationOffset += chunk.size
+                }
+            }
         } finally {
             try {
                 if (recorder.recordingState == android.media.AudioRecord.RECORDSTATE_RECORDING) {
