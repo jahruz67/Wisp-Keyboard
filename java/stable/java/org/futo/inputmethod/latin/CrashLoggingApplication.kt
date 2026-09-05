@@ -24,6 +24,7 @@ import org.acra.data.CrashReportDataFactory
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.addons.AddonManager
+import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.settings.LocalDataStoreCache
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
@@ -151,7 +152,8 @@ class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
     override fun onCreate() {
         super.onCreate()
         if (isDirectBootUnlocked && isMainApplicationProcess()) {
-            AddonManager.get(this)
+            DataStoreHelper.init(this)
+            Thread({ AddonManager.get(this) }, "AddonManager-Init").start()
         }
     }
 }

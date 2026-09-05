@@ -29,6 +29,7 @@ object LayoutManager {
     private var allLayoutNames: List<String>? = null
     private var localeToLayoutsMappings: Map<Locale, List<String>>? = null
     private var localeNames: Map<Locale, Map<Locale, String>>? = null
+    private var appContext: Context? = null
     private var initialized = false
 
     private fun listFilesRecursively(assetManager: AssetManager, path: String): List<String> {
@@ -48,37 +49,36 @@ object LayoutManager {
 
     fun init(context: Context) {
         if(initialized) return
-
+        appContext = context.applicationContext
         initialized = true
-
-        localeToLayoutsMappings = parseMappings(context, "layouts/mapping.yaml").languages.mapKeys {
-            localeFromString(it.key)
-        }
-
-        localeNames = parseNames(context, "layouts/names.yaml").mapKeys {
-            localeFromString(it.key)
-        }.mapValues { it.value.mapKeys { localeFromString(it.key) }}
-
-        val assetManager = context.assets
-
-        val layoutPaths = getAllLayoutPaths(assetManager)
-
-        layoutsById = layoutPaths.filter { it != "layouts/names.yaml" }.associate { path ->
-            val keyboard = LazyKeyboard(path)
-            keyboard.filename to keyboard
-        }
-        allLayoutNames = layoutsById!!.keys.toList()
     }
 
     private fun ensureInitialized() {
         if(!initialized) throw IllegalStateException("LayoutManager method called without being initialized")
     }
 
+    private fun getLayoutsById(context: Context): Map<String, LazyKeyboard> {
+        return layoutsById ?: synchronized(this) {
+            layoutsById ?: run {
+                val assetManager = context.applicationContext.assets
+                val layoutPaths = getAllLayoutPaths(assetManager)
+                val map = layoutPaths.filter { it != "layouts/names.yaml" }.associate { path ->
+                    val keyboard = LazyKeyboard(path)
+                    keyboard.filename to keyboard
+                }
+                allLayoutNames = map.keys.toList()
+                layoutsById = map
+                map
+            }
+        }
+    }
+
     fun getLayout(context: Context, name: String): Keyboard {
         ensureInitialized()
         if(name.startsWith("custom")) return CustomLayout.getCustomLayout(context, name)
 
-        return layoutsById?.get(name)?.get(context) ?: throw IllegalArgumentException("Failed to find keyboard layout $name. Available layouts: ${layoutsById?.keys}")
+        val layouts = getLayoutsById(context)
+        return layouts[name]?.get(context) ?: throw IllegalArgumentException("Failed to find keyboard layout $name. Available layouts: ${layouts.keys}")
     }
 
     fun getLayoutOrNull(context: Context, name: String): Keyboard? {
@@ -89,23 +89,43 @@ object LayoutManager {
             null
         }
 
-        return layoutsById?.get(name)?.get(context)
+        return getLayoutsById(context)[name]?.get(context)
     }
 
     fun getLayoutMapping(context: Context): Map<Locale, List<String>> {
         ensureInitialized()
-        return localeToLayoutsMappings!!
+        return localeToLayoutsMappings ?: synchronized(this) {
+            localeToLayoutsMappings ?: parseMappings(context, "layouts/mapping.yaml").languages.mapKeys {
+                localeFromString(it.key)
+            }.also { localeToLayoutsMappings = it }
+        }
     }
 
     fun getAllLayoutNames(context: Context): List<String> {
         ensureInitialized()
-        return allLayoutNames!!
+        return allLayoutNames ?: synchronized(this) {
+            getLayoutsById(context)
+            allLayoutNames!!
+        }
+    }
+
+    private fun getLocaleNames(): Map<Locale, Map<Locale, String>>? {
+        val context = appContext ?: return null
+        return localeNames ?: synchronized(this) {
+            localeNames ?: run {
+                parseNames(context, "layouts/names.yaml").mapKeys {
+                    localeFromString(it.key)
+                }.mapValues { it.value.mapKeys { localeFromString(it.key) } }.also {
+                    localeNames = it
+                }
+            }
+        }
     }
 
     private val unexceptionalLocales = mutableSetOf<Locale>()
     fun getExceptionalNameForLocale(locale: Locale, inLocale: Locale): String? {
         if(unexceptionalLocales.contains(locale)) return null
-        val names = localeNames ?: return null
+        val names = getLocaleNames() ?: return null
 
         val entry = names[locale] ?: run {
             // If there's an entry for "example" but we have "example_US", should still match.

@@ -25,7 +25,6 @@ import org.futo.inputmethod.latin.uix.SettingsTextEdit
 import org.futo.inputmethod.latin.uix.deferSetSetting
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSetting
-import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_ADDON_ENABLED
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_API_KEY
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_CUSTOM_URL
 import org.futo.inputmethod.latin.uix.actions.translate.TRANSLATE_LIVE_ENABLED
@@ -76,16 +75,6 @@ val TranslateMenu = UserSettingsMenu(
     settings = listOf(
         userSettingDecorationOnly {
             ScreenTitle(stringResource(R.string.translate_addon_title))
-        },
-        UserSetting(
-            name = R.string.translate_setting_enable,
-            subtitle = R.string.translate_addon_subtitle
-        ) {
-            SettingToggleDataStore(
-                title = stringResource(R.string.translate_setting_enable),
-                subtitle = stringResource(R.string.translate_addon_subtitle),
-                setting = TRANSLATE_ADDON_ENABLED
-            )
         },
         UserSetting(
             name = R.string.translate_setting_provider

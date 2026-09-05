@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -26,11 +27,6 @@ enum class TranslationProviderType(val displayName: String, val requiresApiKey: 
             entries.firstOrNull { it.name == name } ?: GOOGLE_FREE
     }
 }
-
-val TRANSLATE_ADDON_ENABLED = SettingsKey(
-    booleanPreferencesKey("translate_addon_enabled"),
-    true
-)
 
 val TRANSLATE_PROVIDER = SettingsKey(
     stringPreferencesKey("translate_provider"),
@@ -129,25 +125,45 @@ object TranslationService {
 
     private fun translateGoogleFree(text: String, source: String, target: String): String {
         val encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.name())
-        val urlStr = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$source&tl=$target&dt=t&q=$encodedText"
-        val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
-            setRequestProperty("User-Agent", "Mozilla/5.0")
-        }
+        val clients = listOf("dict-chrome-ex", "it")
+        var lastException: Exception? = null
 
-        val response = connection.inputStream.bufferedReader().use { it.readText() }
-        val jsonArray = JSONArray(response)
-        val sentences = jsonArray.getJSONArray(0)
-        val sb = StringBuilder()
-        for (i in 0 until sentences.length()) {
-            val sentence = sentences.getJSONArray(i)
-            if (sentence.length() > 0) {
-                sb.append(sentence.getString(0))
+        for (client in clients) {
+            try {
+                val urlStr = "https://translate.googleapis.com/translate_a/single?client=$client&sl=$source&tl=$target&dt=t&q=$encodedText"
+                val connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    setRequestProperty("Accept", "*/*")
+                }
+
+                val code = connection.responseCode
+                if (code != HttpURLConnection.HTTP_OK) {
+                    val err = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                    throw IOException("HTTP $code" + (if (!err.isNullOrBlank()) ": $err" else ""))
+                }
+
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val jsonArray = JSONArray(response)
+                val sentences = jsonArray.getJSONArray(0)
+                val sb = StringBuilder()
+                for (i in 0 until sentences.length()) {
+                    val sentence = sentences.getJSONArray(i)
+                    if (sentence.length() > 0) {
+                        sb.append(sentence.getString(0))
+                    }
+                }
+                val result = sb.toString()
+                if (result.isNotBlank()) {
+                    return result
+                }
+            } catch (e: Exception) {
+                lastException = e
             }
         }
-        return sb.toString()
+        throw lastException ?: IOException("Translation failed")
     }
 
     private fun translateGoogleCloud(text: String, source: String, target: String, apiKey: String): String {

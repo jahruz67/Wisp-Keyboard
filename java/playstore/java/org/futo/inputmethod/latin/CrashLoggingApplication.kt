@@ -10,6 +10,7 @@ import androidx.core.content.edit
 //import androidx.work.Configuration
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.addons.AddonManager
+import org.futo.inputmethod.latin.uix.DataStoreHelper
 
 private fun Application.isMainApplicationProcess(): Boolean {
     val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -62,7 +63,8 @@ class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
     override fun onCreate() {
         super.onCreate()
         if (isDirectBootUnlocked && isMainApplicationProcess()) {
-            AddonManager.get(this)
+            DataStoreHelper.init(this)
+            Thread({ AddonManager.get(this) }, "AddonManager-Init").start()
         }
     }
 }

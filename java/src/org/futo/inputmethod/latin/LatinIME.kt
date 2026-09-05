@@ -52,6 +52,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -411,8 +412,11 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         imeManager.onCreate()
         latinIMELegacy.onCreate()
 
-        scheduleUpdateCheckingJob(this)
-        launchJob { uixManager.showUpdateNoticeIfNeeded() }
+        launchJob {
+            delay(2000L)
+            scheduleUpdateCheckingJob(this@LatinIME)
+            uixManager.showUpdateNoticeIfNeeded()
+        }
 
         launchJob {
             getSettingFlow(THEME_KEY).collect {
@@ -481,6 +485,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         }
 
         launchJob {
+            delay(3000L)
             dataStore.data.collect {
                 CrashLoggingApplication.logPreferences(it)
             }
@@ -488,8 +493,11 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
         // Listen to size changes
         launchJob {
+            val initialData = DataStoreHelper.getPreferences()
             val prev: MutableMap<KeyboardSizeSettingKind, String?> =
-                KeyboardSizeSettingKind.entries.associateWith { null }.toMutableMap()
+                KeyboardSizeSettingKind.entries.associateWith { kind ->
+                    initialData?.get(KeyboardSettings.getValue(kind).key)
+                }.toMutableMap()
 
             dataStore.data.collect { data ->
                 var sizeChanged = false
@@ -646,9 +654,12 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         onSizeMaybeUpdated()
         imeManager.onStartInput()
         latinIMELegacy.onStartInputView(info, restarting)
-        lifecycleScope.launch { uixManager.showUpdateNoticeIfNeeded() }
         updateColorsIfDynamicChanged()
-        uixManager.updateEmojiTranslationsIfNeeded()
+        lifecycleScope.launch {
+            delay(500L)
+            uixManager.showUpdateNoticeIfNeeded()
+            uixManager.updateEmojiTranslationsIfNeeded()
+        }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

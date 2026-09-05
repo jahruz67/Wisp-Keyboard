@@ -250,30 +250,57 @@ class DataStoreHelper {
         @Volatile
         private var currentPreferences: Preferences = preferencesOf()
 
+        private val initLatch = java.util.concurrent.CountDownLatch(1)
+
         @JvmStatic
         @Synchronized
         fun init(context: Context) {
             if(initialized) return
 
-            runBlocking {
-                context.dataStore.data.first().let {
-                    currentPreferences = it
+            val appContext = context.applicationContext
+            Thread({
+                try {
+                    runBlocking {
+                        appContext.dataStore.data.first().let {
+                            currentPreferences = it
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    initialized = true
+                    initLatch.countDown()
                 }
-            }
-            initialized = true
 
-            GlobalScope.launch {
-                context.dataStore.data.collect {
-                    currentPreferences = it
+                GlobalScope.launch {
+                    appContext.dataStore.data.collect {
+                        currentPreferences = it
+                    }
+                }
+            }, "DataStoreHelper-Init").start()
+        }
+
+        private fun ensureInitialized() {
+            if (!initialized) {
+                try {
+                    initLatch.await()
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
                 }
             }
         }
 
         @JvmStatic
-        fun<T> getSettingOrNull(key: Preferences.Key<T>): T? = currentPreferences[key]
+        fun<T> getSettingOrNull(key: Preferences.Key<T>): T? {
+            ensureInitialized()
+            return currentPreferences[key]
+        }
 
         @JvmStatic
-        fun getPreferences(): Preferences? = if(initialized) currentPreferences else null
+        fun getPreferences(): Preferences? {
+            ensureInitialized()
+            return if(initialized) currentPreferences else null
+        }
 
         @JvmStatic
         fun<T> getSetting(key: Preferences.Key<T>, default: T): T = getSettingOrNull(key) ?: default

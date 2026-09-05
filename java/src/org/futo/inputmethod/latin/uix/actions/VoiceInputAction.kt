@@ -524,6 +524,12 @@ private class GroqVoiceInputActionWindow(
                         statusText = context.getString(org.futo.voiceinput.shared.R.string.processing)
                     }
                     transcribeGroq()
+                } else {
+                    withContext(Dispatchers.Main) {
+                        currentViewState = CurrentView.Error
+                        errorText = "No speech detected. Please try again."
+                    }
+                    resumeMediaIfWePaused()
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -532,6 +538,7 @@ private class GroqVoiceInputActionWindow(
                     currentViewState = CurrentView.Error
                     errorText = "Recording failed: ${e.message}"
                 }
+                resumeMediaIfWePaused()
             }
         }
     }
@@ -574,10 +581,11 @@ private class GroqVoiceInputActionWindow(
 
             val shortBuffer = ShortArray(1600)
             var totalSamples = 0
+            val maxSamples = sampleRate * 120 // 2 minutes max
             val recordedChunks = mutableListOf<FloatArray>()
             var hasTalked = false
 
-            while (!stopRequested) {
+            while (!stopRequested && totalSamples < maxSamples) {
                 yield()
                 val nRead = recorder.read(
                     shortBuffer,

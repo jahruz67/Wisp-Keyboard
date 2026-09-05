@@ -29,6 +29,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionTextEditor
@@ -183,50 +185,102 @@ fun TranslateContents(
     var isTranslating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val translationRequestVersion = remember { AtomicInteger() }
+    val scope = rememberCoroutineScope()
+    var lastTranslatedQuery by remember { mutableStateOf("") }
 
     var voiceMode by remember { mutableStateOf(false) }
 
-    LaunchedEffect(query, sourceLang, targetLang) {
-        val requestVersion = translationRequestVersion.incrementAndGet()
-        isTranslating = false
-        if (query.isEmpty()) {
+    fun performTranslation() {
+        val currentQuery = query
+        if (currentQuery.isEmpty()) {
             translatedText = ""
             errorMessage = null
-            isTranslating = false
-            return@LaunchedEffect
+            lastTranslatedQuery = ""
+            return
         }
-
+        val requestVersion = translationRequestVersion.incrementAndGet()
         errorMessage = null
-        delay(400L)
         isTranslating = true
+        scope.launch {
+            try {
+                val res = TranslationService.translate(
+                    text = currentQuery,
+                    sourceLang = sourceLang,
+                    targetLang = targetLang,
+                    providerType = providerType,
+                    apiKey = apiKey,
+                    customUrl = customUrl
+                )
 
-        try {
-            val res = TranslationService.translate(
-                text = query,
-                sourceLang = sourceLang,
-                targetLang = targetLang,
-                providerType = providerType,
-                apiKey = apiKey,
-                customUrl = customUrl
-            )
-
-            res.onSuccess {
-                translatedText = it
-                errorMessage = null
-            }.onFailure {
-                errorMessage = it.localizedMessage ?: "Translation failed"
-            }
-        } finally {
-            if (translationRequestVersion.get() == requestVersion) {
-                isTranslating = false
+                if (translationRequestVersion.get() == requestVersion) {
+                    res.onSuccess {
+                        translatedText = it
+                        lastTranslatedQuery = currentQuery
+                        errorMessage = null
+                    }.onFailure {
+                        errorMessage = it.localizedMessage ?: "Translation failed"
+                    }
+                }
+            } finally {
+                if (translationRequestVersion.get() == requestVersion) {
+                    isTranslating = false
+                }
             }
         }
     }
 
-    LaunchedEffect(voiceMode, translatedText, errorMessage, showLiveTranslation) {
+    LaunchedEffect(query, sourceLang, targetLang, showLiveTranslation) {
+        if (query.isEmpty()) {
+            translatedText = ""
+            errorMessage = null
+            lastTranslatedQuery = ""
+            isTranslating = false
+            return@LaunchedEffect
+        }
+
+        if (showLiveTranslation) {
+            val requestVersion = translationRequestVersion.incrementAndGet()
+            isTranslating = false
+            errorMessage = null
+            delay(400L)
+            isTranslating = true
+
+            try {
+                val res = TranslationService.translate(
+                    text = query,
+                    sourceLang = sourceLang,
+                    targetLang = targetLang,
+                    providerType = providerType,
+                    apiKey = apiKey,
+                    customUrl = customUrl
+                )
+
+                if (translationRequestVersion.get() == requestVersion) {
+                    res.onSuccess {
+                        translatedText = it
+                        lastTranslatedQuery = query
+                        errorMessage = null
+                    }.onFailure {
+                        errorMessage = it.localizedMessage ?: "Translation failed"
+                    }
+                }
+            } finally {
+                if (translationRequestVersion.get() == requestVersion) {
+                    isTranslating = false
+                }
+            }
+        } else {
+            if (query != lastTranslatedQuery) {
+                translatedText = ""
+                errorMessage = null
+            }
+        }
+    }
+
+    LaunchedEffect(voiceMode, translatedText, errorMessage) {
         onSupplementalContentChanged(
             voiceMode ||
-                (showLiveTranslation && translatedText.isNotBlank()) ||
+                translatedText.isNotBlank() ||
                 errorMessage != null
         )
     }
@@ -242,6 +296,7 @@ fun TranslateContents(
             }
             translatedText = ""
             errorMessage = null
+            lastTranslatedQuery = ""
         }
         return
     }
@@ -314,10 +369,20 @@ fun TranslateContents(
                 ) {
                     ActionTextEditor(
                         text = textState,
-                        multiline = true,
+                        multiline = false,
                         centerVertically = true,
                         placeholder = "Type text to translate...",
                         autofocus = true,
+                        onEnter = {
+                            if (translatedText.isNotBlank() && query == lastTranslatedQuery) {
+                                manager.typeText(translatedText)
+                                textState.value = ""
+                                translatedText = ""
+                                lastTranslatedQuery = ""
+                            } else {
+                                performTranslation()
+                            }
+                        },
                         modifier = if (keyboardShown) {
                             Modifier
                                 .fillMaxWidth()
@@ -338,12 +403,27 @@ fun TranslateContents(
                             manager.typeText(translatedText)
                             textState.value = ""
                             translatedText = ""
+                            lastTranslatedQuery = ""
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = "Insert Translation",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else if (query.isNotBlank()) {
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(
+                        onClick = {
+                            performTranslation()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.arrow_right),
+                            contentDescription = "Translate",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -366,7 +446,7 @@ fun TranslateContents(
             }
         }
 
-        if ((showLiveTranslation && translatedText.isNotBlank()) || errorMessage != null) {
+        if (translatedText.isNotBlank() || errorMessage != null) {
             Spacer(Modifier.height(4.dp))
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -374,15 +454,39 @@ fun TranslateContents(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .then(
+                        if (translatedText.isNotBlank() && errorMessage == null) {
+                            Modifier.clickable {
+                                manager.typeText(translatedText)
+                                textState.value = ""
+                                translatedText = ""
+                                lastTranslatedQuery = ""
+                            }
+                        } else Modifier
+                    )
             ) {
-                Text(
-                    text = errorMessage ?: translatedText,
-                    color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = errorMessage ?: translatedText,
+                        color = if (errorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (translatedText.isNotBlank() && errorMessage == null) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Tap to insert",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
         }
     }

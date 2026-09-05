@@ -103,6 +103,7 @@ import androidx.navigation.NavHostController
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.futo.inputmethod.accessibility.AccessibilityUtils
@@ -1602,7 +1603,10 @@ class UixManager(private val latinIME: LatinIME) {
         if (!latinIME.isDirectBootUnlocked || isCollectingAddons) return
         isCollectingAddons = true
         latinIME.lifecycleScope.launch(Dispatchers.Main) {
+            var isFirst = true
             AddonManager.get(latinIME).addons.collect { addons ->
+                val wasFirst = isFirst
+                isFirst = false
                 currWindowAction.value?.let { activeAction ->
                     val activeAddonId = activeAction.addonId
                     if (activeAddonId != null) {
@@ -1615,7 +1619,9 @@ class UixManager(private val latinIME: LatinIME) {
                         }
                     }
                 }
-                latinIME.invalidateKeyboard(true)
+                if (!wasFirst || addons.isNotEmpty()) {
+                    latinIME.invalidateKeyboard(true)
+                }
             }
         }
     }
@@ -1628,9 +1634,13 @@ class UixManager(private val latinIME: LatinIME) {
         startCollectingAddons()
 
         latinIME.lifecycleScope.launch(Dispatchers.Main) {
+            delay(1000L)
             WindowInfoTracker.getOrCreate(latinIME).windowLayoutInfo(latinIME).collect {
-                foldingOptions.value = FoldingOptions(it.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull())
-                latinIME.invalidateKeyboard(true)
+                val newOptions = FoldingOptions(it.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull())
+                if (foldingOptions.value != newOptions) {
+                    foldingOptions.value = newOptions
+                    latinIME.invalidateKeyboard(true)
+                }
             }
         }
 
@@ -1695,6 +1705,12 @@ class UixManager(private val latinIME: LatinIME) {
             checkIfDictInstalled()
         } catch(e: Exception) {
             e.printStackTrace()
+        }
+        val isDifferentField = this.editorInfo?.packageName != editorInfo?.packageName ||
+                this.editorInfo?.fieldId != editorInfo?.fieldId ||
+                this.editorInfo?.inputType != editorInfo?.inputType
+        if (isDifferentField) {
+            inlineSuggestions.value = emptyList()
         }
         inlineStuffHiddenByTyping.value = false
         this.editorInfo = editorInfo

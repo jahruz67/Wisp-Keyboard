@@ -256,8 +256,8 @@ fun InlineSuggestionView(inlineSuggestion: MutableState<View?>, leftBound: Int, 
 @Composable
 fun RowScope.InlineSuggestions(suggestions: List<MutableState<View?>>) {
     val scrollState = rememberScrollState()
-    val leftBound = scrollState.value
-    val rightBound = scrollState.value + scrollState.viewportSize
+    val leftBound = 0
+    val rightBound = scrollState.viewportSize
 
     CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
         if (scrollState.value > 0) {
