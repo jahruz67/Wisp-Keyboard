@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.Bundle
 import android.util.Size
 import android.util.TypedValue
 import android.view.View
@@ -32,6 +33,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -65,7 +67,8 @@ private const val maxHeightDp = 48.0f
 @RequiresApi(Build.VERSION_CODES.R)
 fun createInlineSuggestionsRequest(
     context: Context,
-    activeColorScheme: KeyboardColorScheme
+    activeColorScheme: KeyboardColorScheme,
+    uiExtras: Bundle? = null
 ): InlineSuggestionsRequest? {
     if(context.getSetting(InlineAutofillSetting) == false
         || context.getSetting(ActionBarDisplayedSetting) == false) {
@@ -154,10 +157,12 @@ fun createInlineSuggestionsRequest(
         ),
     ).setStyle(stylesBundle).build()
 
-    return InlineSuggestionsRequest.Builder(List(maxSuggestions) { spec }).let { request ->
-        request.setMaxSuggestionCount(maxSuggestions)
-        request.build()
-    }
+    return InlineSuggestionsRequest.Builder(List(maxSuggestions) { spec }).apply {
+        setMaxSuggestionCount(maxSuggestions)
+        if (uiExtras != null) {
+            setExtras(uiExtras)
+        }
+    }.build()
 }
 
 @RequiresApi(Build.VERSION_CODES.R)
@@ -183,22 +188,52 @@ fun Context.inflateInlineSuggestion(inlineSuggestion: InlineSuggestion): Mutable
 @Composable
 fun InlineSuggestionView(inlineSuggestion: MutableState<View?>, leftBound: Int, rightBound: Int) {
     key(inlineSuggestion.value) {
-        var pos by remember { mutableStateOf(IntOffset.Zero) }
-        if (inlineSuggestion.value != null) {
+        val view = inlineSuggestion.value
+        if (view != null) {
+            var pos by remember { mutableStateOf(IntOffset.Zero) }
+
+            fun updateClipping(targetView: View, x: Int) {
+                val width = targetView.width
+                val height = targetView.height
+                if (width <= 0 || height <= 0 || rightBound <= leftBound) {
+                    targetView.clipBounds = null
+                    targetView.visibility = View.VISIBLE
+                    return
+                }
+
+                val clipLeft = (leftBound - x).coerceIn(0, width)
+                val clipRight = (rightBound - x).coerceIn(0, width)
+
+                if (clipRight <= clipLeft) {
+                    targetView.clipBounds = Rect(0, 0, 0, 0)
+                    targetView.visibility = View.INVISIBLE
+                } else if (clipLeft == 0 && clipRight == width) {
+                    targetView.clipBounds = null
+                    targetView.visibility = View.VISIBLE
+                } else {
+                    targetView.clipBounds = Rect(clipLeft, 0, clipRight, height)
+                    targetView.visibility = View.VISIBLE
+                }
+            }
+
+            DisposableEffect(view) {
+                val listener = View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                    updateClipping(v, pos.x)
+                }
+                view.addOnLayoutChangeListener(listener)
+                onDispose {
+                    view.removeOnLayoutChangeListener(listener)
+                }
+            }
+
             AndroidView(
                 factory = {
-                    ViewCompat.setNestedScrollingEnabled(inlineSuggestion.value!!, true)
-                    inlineSuggestion.value!!
+                    (view.parent as? ViewGroup)?.removeView(view)
+                    ViewCompat.setNestedScrollingEnabled(view, true)
+                    view
                 },
-                update = { view ->
-                    view.clipBounds = Rect(
-                        (leftBound - pos.x).coerceAtLeast(0),
-                        0,
-                        (rightBound - pos.x).coerceAtMost(view.width).coerceAtLeast(0),
-                        view.height
-                    )
-                    if (view.clipBounds.isEmpty) view.visibility =
-                        View.INVISIBLE else view.visibility = View.VISIBLE
+                update = { targetView ->
+                    updateClipping(targetView, pos.x)
                 },
                 modifier = Modifier
                     .padding(4.dp, 0.dp)
@@ -208,6 +243,7 @@ fun InlineSuggestionView(inlineSuggestion: MutableState<View?>, leftBound: Int, 
                             position.x.roundToInt(),
                             position.y.roundToInt()
                         )
+                        updateClipping(view, pos.x)
                     }
             )
         }

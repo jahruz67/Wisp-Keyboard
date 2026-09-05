@@ -654,7 +654,11 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         latinIMELegacy.onFinishInputView(finishingInput)
-        uixManager.onInputFinishing()
+        if (finishingInput) {
+            uixManager.onInputFinishing()
+        } else {
+            uixManager.onWindowHidden()
+        }
         imeManager.onFinishInput()
     }
 
@@ -677,7 +681,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     override fun onWindowHidden() {
         super.onWindowHidden()
         latinIMELegacy.onWindowHidden()
-        uixManager.onInputFinishing()
+        uixManager.onWindowHidden()
     }
 
     override fun onUpdateSelection(
@@ -859,7 +863,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     @RequiresApi(Build.VERSION_CODES.R)
     override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? {
-        return createInlineSuggestionsRequest(this, colorScheme)
+        return createInlineSuggestionsRequest(this, colorScheme, uiExtras)
     }
 
     @RequiresApi(Build.VERSION_CODES.R)

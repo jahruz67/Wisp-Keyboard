@@ -59,7 +59,7 @@ val TRANSLATE_DEFAULT_TARGET = SettingsKey(
 
 val TRANSLATE_LIVE_ENABLED = SettingsKey(
     booleanPreferencesKey("translate_live_enabled"),
-    true
+    false
 )
 
 data class SupportedLanguage(

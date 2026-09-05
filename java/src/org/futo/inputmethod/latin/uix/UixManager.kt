@@ -21,6 +21,7 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import org.futo.inputmethod.latin.utils.InputTypeUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -708,7 +709,10 @@ class UixManager(private val latinIME: LatinIME) {
             }
 
             val inlineSuggestions = run {
-                if(!inlineStuffHiddenByTyping.value) inlineSuggestions.value else emptyList()
+                val isPassword = latinIME.currentInputEditorInfo?.let {
+                    InputTypeUtils.isPasswordInputType(it.inputType)
+                } ?: false
+                if(isPassword || !inlineStuffHiddenByTyping.value) inlineSuggestions.value else emptyList()
             }
 
             if(actionBarShown.value || inlineSuggestions.isNotEmpty()) {
@@ -1327,12 +1331,17 @@ class UixManager(private val latinIME: LatinIME) {
                 Column {
                     Box(Modifier.onGloballyPositioned { floatingPreeditPosition.value = it })
                     // TODO: Refactor how we handle expandable suggestions here to not be a mess
+                    val isPassword = latinIME.currentInputEditorInfo?.let {
+                        InputTypeUtils.isPasswordInputType(it.inputType)
+                    } ?: false
+                    val inlineSuggestionsVisible = inlineSuggestions.value.isNotEmpty()
+                            && (isPassword || !inlineStuffHiddenByTyping.value)
                     val needToUseExpandableSuggestionUi =
                         expandableSuggestionCfg.value.useExpandableUi && suggestedWords.value?.size()?.equals(0) != true
                                 && mainKeyboardHidden.value == false
                                 && (quickClipState.value == null || inlineStuffHiddenByTyping.value)
                                 && currentNotice.value == null
-                                && (inlineSuggestions.value.isEmpty() || inlineStuffHiddenByTyping.value)
+                                && !inlineSuggestionsVisible
                     when {
                         currWindowActionWindow.value != null -> ActionViewWithHeader(
                             currWindowActionWindow.value!!,
@@ -1527,6 +1536,7 @@ class UixManager(private val latinIME: LatinIME) {
 
         if(response.inlineSuggestions.isNotEmpty() == true){
             currentNotice.value?.onDismiss(latinIME, true)
+            inlineStuffHiddenByTyping.value = false
         }
 
         inlineSuggestions.value = response.inlineSuggestions.map {
@@ -1704,13 +1714,17 @@ class UixManager(private val latinIME: LatinIME) {
         floatingPreeditEditing.value = false
     }
 
-    fun onInputFinishing() {
+    fun onWindowHidden() {
         closeActionWindow()
         languageSwitcherDialog?.dismiss()
         isShowingActionEditor.value = false
         resizers.hideResizer()
-        inlineSuggestions.value = emptyList()
         floatingPreeditText.value = ""
+    }
+
+    fun onInputFinishing() {
+        onWindowHidden()
+        inlineSuggestions.value = emptyList()
     }
 
     // Called by InputLogic on any event
