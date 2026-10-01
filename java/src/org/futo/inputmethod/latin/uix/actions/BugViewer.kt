@@ -123,9 +123,12 @@ val BugViewerAction = Action(
                             }
 
                             TextButton(onClick = {
-                                manager.getContext().openURI("mailto:keyboard@futo.org", newTask = true)
+                                manager.getContext().openURI(
+                                    "https://github.com/jahruz67/Wisp-Keyboard/issues/new",
+                                    newTask = true
+                                )
                             }) {
-                                Text("Email us (include the copy)")
+                                Text("Open Wisp issue tracker")
                             }
                         }
                         Text(it.details, style = DebugLabel)

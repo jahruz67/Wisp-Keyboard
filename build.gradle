@@ -124,6 +124,32 @@ final def translationsWithoutEngValues = { final String path ->
 
                     content = content.replaceAll('"', '\\\\"')
 
+                    // Brand translated UI as Wisp without modifying the upstream translation
+                    // submodule. Payment copy must continue to identify the upstream licensor.
+                    if (!stringName.startsWith('payment_')) {
+                        content = content.replace('FUTO', 'Wisp')
+                    }
+                    if (stringName == 'crashed_text_email') {
+                        content = 'Wisp Keyboard has crashed. Copy the report and attach it to an issue in the Wisp repository.'
+                    }
+                    // These payment labels are intentionally explicit in every locale so the
+                    // upstream license flow is not mistaken for a Wisp purchase.
+                    if (stringName == 'payment_screen_short_title') {
+                        content = 'Upstream License'
+                    } else if (stringName == 'payment_screen_title') {
+                        content = 'Support FUTO, the upstream project'
+                    } else if (stringName == 'payment_screen_sales_paragraph_1') {
+                        content = 'You have been using Wisp Keyboard for %d days. Wisp is built from FUTO Keyboard, and its license requires this upstream payment option to remain available.'
+                    } else if (stringName == 'payment_screen_sales_paragraph_1_alt') {
+                        content = 'Wisp Keyboard is built from FUTO Keyboard. Its license requires this upstream payment option to remain available in distributed forks.'
+                    } else if (stringName == 'payment_screen_sales_paragraph_2') {
+                        content = 'Payments on this screen go to FUTO, the upstream licensor, not to the Wisp Keyboard maintainer.'
+                    } else if (stringName == 'payment_unpaid_version_title') {
+                        content = 'Support the upstream project'
+                    } else if (stringName == 'payment_paid_version_indicator') {
+                        content = 'Upstream FUTO license recognized'
+                    }
+
                     "    <string name=\"" + stringName + "\">\"" + content + "\"</string>\n"
                 } else {
                     line
@@ -227,8 +253,10 @@ android {
         versionName getVersionName()
         versionCode getVersionCode()
 
-        applicationId 'org.futo.inputmethod.latin'
-        testApplicationId 'org.futo.inputmethod.latin.tests'
+        // Keep the source namespace stable, but install Wisp as its own app instead of
+        // impersonating or replacing the upstream FUTO Keyboard package.
+        applicationId 'com.jahruz67.wispkeyboard'
+        testApplicationId 'com.jahruz67.wispkeyboard.tests'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = false
     }
@@ -314,7 +342,7 @@ android {
             versionNameSuffix "-unstable"
 
             buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
-            buildConfigField "boolean", "UPDATE_CHECKING", "true"
+            buildConfigField "boolean", "UPDATE_CHECKING", "false"
             buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
             buildConfigField "String", "BRANCH", "\"${getBranch()}\""
             getIsDefault().set(true)
@@ -325,7 +353,7 @@ android {
         stable {
             dimension "buildType"
             buildConfigField "boolean", "IS_PLAYSTORE_BUILD", "false"
-            buildConfigField "boolean", "UPDATE_CHECKING", "true"
+            buildConfigField "boolean", "UPDATE_CHECKING", "false"
             buildConfigField "boolean", "UPDATE_CHECKING_NETWORK", "false"
             buildConfigField "String", "BRANCH", "\"${getBranch()}\""
 

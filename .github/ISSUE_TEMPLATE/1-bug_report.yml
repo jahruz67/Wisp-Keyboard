@@ -3,18 +3,15 @@ description: Let us know about an unexpected error, a crash, or an incorrect beh
 labels: ["Bug"]
 title: "Bug: "
 type: bug
-projects: ["futo-org/23"]
 body:
   - type: markdown
     attributes:
       value: |
         # Thank you for taking the time to fill out this bug report.
 
-        The [android-keyboard](https://github.com/futo-org/android-keyboard) issue tracker is reserved for issues relating to the FUTO Keyboard Android Application
+        This tracker is for Wisp Keyboard, an independent fork. For bugs in the upstream FUTO Keyboard app, use the upstream project instead.
 
-        For general usage questions, please see the [FUTO Keyboard Zulip Channel](https://chat.futo.org/#narrow/stream/53-Keyboard) or the [FUTO Keyboard Discord](https://keyboard.futo.tech/discord)
-
-        Please open bug reports one at a time. If you have 3 separate feature requests/bugs, do not combine them into one issue, this makes it really difficult to track and understand them.
+        Please open one bug per issue so each problem can be reproduced and tracked clearly.
 
         ## Filing a bug report
 
@@ -56,7 +53,7 @@ body:
     id: keyboard-version
     attributes:
       label: Keyboard Version
-      description: Open the FUTO Keyboard settings and look for the version name at the bottom, or in the Help & Feedback menu. Please make sure you're up-to-date before filing a bug report. Reports from outdated versions may be closed.
+      description: Open Wisp Keyboard settings and look for the version at the bottom or in Help & Feedback.
       placeholder: "0.1.22"
     validations:
       required: true

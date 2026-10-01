@@ -89,53 +89,20 @@ val HelpMenu = UserSettingsMenu(
         },
 
         userSettingNavigationItem(
-            title = R.string.help_menu_website,
-            subtitle = R.string.help_menu_website_subtitle,
-            style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://futo.tech/")
-            }
-        ).copy(searchTags = R.string.help_menu_website_tags),
-
-        userSettingNavigationItem(
-            title = R.string.help_menu_documentation,
-            subtitle = R.string.help_menu_documentation_subtitle,
-            style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://docs.keyboard.futo.tech/")
-            }
-        ),
-        userSettingNavigationItem(
-            title = R.string.help_menu_discord,
-            subtitle = R.string.help_menu_discord_subtitle,
-            style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://keyboard.futo.tech/discord")
-            }
-        ),
-        userSettingNavigationItem(
-            title = R.string.help_menu_futo_chat,
-            subtitle = R.string.help_menu_futo_chat_subtitle,
-            style = NavigationItemStyle.Misc,
-            navigate = { nav ->
-                nav.context.openURI("https://chat.futo.org/")
-            }
-        ),
-        userSettingNavigationItem(
             title = R.string.help_menu_github,
             subtitle = R.string.help_menu_github_subtitle,
             style = NavigationItemStyle.Misc,
             navigate = { nav ->
-                nav.context.openURI("https://github.com/futo-org/android-keyboard/issues")
+                nav.context.openURI("https://github.com/jahruz67/Wisp-Keyboard/issues")
             }
         ),
         userSettingNavigationItem(
-            title = R.string.help_menu_email,
-            subtitle = R.string.help_menu_email_subtitle,
-            style = NavigationItemStyle.Mail,
+            title = R.string.help_menu_repository,
+            subtitle = R.string.help_menu_repository_subtitle,
+            style = NavigationItemStyle.ExternalLink,
             navigate = { nav ->
-                nav.context.openURI("mailto:keyboard@futo.org")
+                nav.context.openURI("https://github.com/jahruz67/Wisp-Keyboard")
             }
-        ).copy(searchTags = R.string.help_menu_email_tags),
+        ),
     )
 )

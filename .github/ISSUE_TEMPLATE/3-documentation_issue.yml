@@ -3,18 +3,13 @@ description: Report an issue or suggest a change in the documentation.
 labels: ["Documentation"]
 title: "Documentation: "
 type: task
-projects: ["futo-org/23"]
 body:
   - type: markdown
     attributes:
       value: |
         # Thank you for opening a documentation change request.
 
-        The [android-keyboard](https://github.com/futo-org/android-keyboard) issue tracker is reserved for issues relating to the FUTO Keyboard Android Application. Use the `Documentation` issue type to report problems with the documentation in our code repositories, inside the application, or on [https://keyboard.futo.tech](https://keyboard.futo.tech)
-
-        Technical writers monitor this issue type, so report FUTO Keyboard bugs or feature requests with the `Bug report` or `Feature Request` issue types instead to get engineering attention.
-
-        For general usage questions, please see the [FUTO Keyboard Zulip Channel](https://chat.futo.org/#narrow/stream/53-Keyboard) or the [FUTO Keyboard Discord](https://keyboard.futo.tech/discord)
+        Use this form for Wisp Keyboard documentation in this repository or in the app. Use the bug or feature forms for product behavior.
 
   - type: textarea
     id: keyboard-affected-pages

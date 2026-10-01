@@ -222,7 +222,7 @@ val CreditsScreenLite = UserSettingsMenu(
             title = (R.string.credits_menu_contribute_code_button),
             style = NavigationItemStyle.Misc,
             navigate = {
-                it.context.openURI("https://github.com/futo-org/android-keyboard/")
+                it.context.openURI("https://github.com/jahruz67/Wisp-Keyboard/")
             })
 
     )
@@ -246,6 +246,8 @@ fun CreditsScreen(navController: NavHostController = rememberNavController()) {
                 stringResource(R.string.credits_menu_header_text),
                 style = Typography.Body.RegularMl
             )
+
+            ParagraphText(stringResource(R.string.credits_menu_fork_notice))
 
             CreditCategorySection(
                 icon = R.drawable.file_text,

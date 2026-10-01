@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Application name for the dev version of keyboard. "FUTO" should not be translated. -->
-    <string name="english_ime_name">FUTO Keyboard [Dev Build]</string>
+    <!-- Application name for the dev version of keyboard. "Wisp" should not be translated. -->
+    <string name="english_ime_name">Wisp Keyboard [Dev Build]</string>
 
-    <!-- Name of Android spell checker service. "FUTO" should not be translated. -->
-    <string name="spell_checker_service_name">FUTO Spell Checker [Dev Build]</string>
+    <!-- Name of Android spell checker service. "Wisp" should not be translated. -->
+    <string name="spell_checker_service_name">Wisp Spell Checker [Dev Build]</string>
 
-    <!-- Title for Android Keyboard settings screen. "FUTO" should not be translated. -->
-    <string name="english_ime_settings">FUTO Keyboard Settings [Dev Build]</string>
+    <!-- Title for Android Keyboard settings screen. "Wisp" should not be translated. -->
+    <string name="english_ime_settings">Wisp Keyboard Settings [Dev Build]</string>
 
-    <!-- Title for the spell checking service settings screen. "FUTO" should not be translated. -->
-    <string name="android_spell_checker_settings">FUTO Spell Checker Settings [Dev Build]</string>
+    <!-- Title for the spell checking service settings screen. "Wisp" should not be translated. -->
+    <string name="android_spell_checker_settings">Wisp Spell Checker Settings [Dev Build]</string>
 </resources>

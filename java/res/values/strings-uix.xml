@@ -217,11 +217,11 @@
     <string name="keyboard_actionbar_undock_action_window_collapse_into_keyboard_talkback">Collapse</string>
 
     <!-- Payment screen -->
-    <string name="payment_screen_short_title">Payment</string>
-    <string name="payment_screen_title">Pay for FUTO Keyboard</string>
-    <string name="payment_screen_sales_paragraph_1">You\'ve been using FUTO Keyboard for <xliff:g name="days" example="30">%d</xliff:g> days. If you find this app useful, please consider paying to support future development of FUTO software.</string>
-    <string name="payment_screen_sales_paragraph_1_alt">Thank you for trying out FUTO Keyboard! If you find this app useful, please consider paying to support future development of FUTO software.</string>
-    <string name="payment_screen_sales_paragraph_2">FUTO is dedicated to making good software that doesn\'t abuse you. This app will never serve you ads or collect your personal data.</string>
+    <string name="payment_screen_short_title">Upstream License</string>
+    <string name="payment_screen_title">Support FUTO, the upstream project</string>
+    <string name="payment_screen_sales_paragraph_1">You\'ve been using Wisp Keyboard for <xliff:g name="days" example="30">%d</xliff:g> days. Wisp is built from FUTO Keyboard, and its license requires this upstream payment option to remain available.</string>
+    <string name="payment_screen_sales_paragraph_1_alt">Wisp Keyboard is built from FUTO Keyboard. Its license requires this upstream payment option to remain available in distributed forks.</string>
+    <string name="payment_screen_sales_paragraph_2">Payments on this screen go to FUTO, the upstream licensor, not to the Wisp Keyboard maintainer.</string>
     <string name="payment_screen_sales_point_development_title">Sustainable Development</string>
     <string name="payment_screen_sales_point_development_body">FUTO\'s mission is for open-source software and non-malicious software business practices to become a sustainable income source for projects and their developers. For this reason, we are in favor of users actually paying for software.</string>
     <string name="payment_screen_sales_point_privacy_title">Commitment to Privacy</string>
@@ -264,16 +264,16 @@
     <string name="payment_screen_license_integrity_error">Failed to verify license. If you believe this to be an error, please contact us.</string>
     <string name="payment_screen_continue_button">Continue</string>
 
-    <string name="payment_unpaid_version_title">Unpaid FUTO Keyboard</string>
+    <string name="payment_unpaid_version_title">Support the upstream project</string>
     <string name="payment_unpaid_version_indicator">Unpaid</string>
-    <string name="payment_paid_version_indicator">Thank you for using the paid version of FUTO Keyboard!</string>
+    <string name="payment_paid_version_indicator">Upstream FUTO license recognized</string>
 
 
     <!-- Lack of automatic updates notice -->
     <string name="manual_update_notice_title">Updates Notice</string>
     <string name="manual_update_notice_paragraph_1">This app doesn\'t connect to the internet and it won\'t be able to check for automatic updates. You can check for updates manually though.</string>
-    <string name="manual_update_notice_paragraph_2">Please use F-Droid or Obtainium for automatic updates. Visit keyboard.futo.tech for download options.</string>
-    <string name="manual_update_notice_dev_paragraph">You are on the development build of FUTO Keyboard. Visit keyboard.futo.tech if you want to download the stable build.</string>
+    <string name="manual_update_notice_paragraph_2">This fork does not currently provide automatic updates. Check the Wisp Keyboard releases page for new versions.</string>
+    <string name="manual_update_notice_dev_paragraph">You are using a development build of Wisp Keyboard. Check the project releases page for stable builds.</string>
     <string name="manual_update_notice_visit_site_button">Visit</string>
     <!-- can be translated as "understood", etc -->
     <string name="manual_update_notice_dismiss_notice_button">Dismiss</string>
@@ -284,6 +284,7 @@
     <string name="settings_unknown_error_title">Unknown Error</string>
     <string name="settings_unknown_error_subtitle">An unknown error has occurred.</string>
     <string name="settings_try_typing_here">Try typing here…</string>
+    <string name="settings_fork_credit">Wisp Keyboard is an independent, modified fork of FUTO Keyboard and LatinIME. Not affiliated with FUTO.</string>
     <string name="settings_external_model_name">Externally imported model</string>
     <string name="settings_check_for_updates_manually">Check for updates manually</string>
     <string name="settings_update_available">Update Available</string>
@@ -367,7 +368,7 @@
     <string name="resource_importer_select_language">Select the language to import for:</string>
     <string name="resource_importer_warning_language_missing">This file appears to be intended for a language (%1$s) which is not enabled in settings</string>
     <string name="resource_importer_warning_cfg_backup_is_destructive2">Are you sure you want to import this configuration backup? This will replace all of your settings, personal dictionary (system-wide), learned dictionary words, any imported resources, and more. If you\'re unsure, make another backup before this.</string>
-    <string name="resource_importer_warning_cfg_backup_newer_version">This configuration backup was created by a newer version of FUTO Keyboard, and it might not import properly. Try updating FUTO Keyboard first.</string>
+    <string name="resource_importer_warning_cfg_backup_newer_version">This configuration backup was created by a newer version of Wisp Keyboard, and it might not import properly. Try updating Wisp Keyboard first.</string>
 
     <string name="settings_export_configuration_title">Settings Backup</string>
     <string name="settings_export_configuration">Export configuration</string>
@@ -532,7 +533,7 @@
     <string name="theme_settings_custom_theme_delete_cancel">Cancel</string>
     <string name="theme_settings_add_new_theme">Add new theme</string>
     <string name="theme_settings_add_new_theme_question">Create a new theme from a picture, or add a downloaded ZIP theme?</string>
-    <string name="theme_settings_warning_newer_version">This theme may require a newer version of FUTO Keyboard than the one you have. If you\'re a theme developer, check the error log below.</string>
+    <string name="theme_settings_warning_newer_version">This theme may require a newer version of Wisp Keyboard than the one you have. If you\'re a theme developer, check the error log below.</string>
     <string name="theme_settings_visit_theme_store">Explore themes online</string>
 
     <!-- Theme customizer -->
@@ -580,7 +581,7 @@
     <string name="swipe_settings_show_unsupported">Show unsupported settings…</string>
     <string name="swipe_settings_use_old_swipe">Use legacy swipe algorithm</string>
     <string name="swipe_settings_use_old_swipe_subtitle_short">The legacy algorithm is very inaccurate and not recommended.</string>
-    <string name="swipe_settings_use_old_swipe_subtitle">The legacy algorithm is very inaccurate and not recommended. If you have to use this, please tell us why at keyboard@futo.org. This option will be removed in the future.</string>
+    <string name="swipe_settings_use_old_swipe_subtitle">The legacy algorithm is very inaccurate and not recommended. If you have to use it, please open a Wisp issue explaining why. This option may be removed in the future.</string>
 
     <!-- Voice input settings menu -->
     <string name="voice_input_settings_title">Voice Input</string>
@@ -650,8 +651,10 @@
     <string name="help_menu_discord_subtitle">Wanna talk but don\'t like Zulip? Chat here</string>
     <string name="help_menu_futo_chat">FUTO Chat (Zulip)</string>
     <string name="help_menu_futo_chat_subtitle">Wanna talk but don\'t like Discord? Chat here</string>
-    <string name="help_menu_github">Public issue tracker (GitHub)</string>
-    <string name="help_menu_github_subtitle">Specific bug or feature request? Post here</string>
+    <string name="help_menu_github">Wisp issue tracker (GitHub)</string>
+    <string name="help_menu_github_subtitle">Report a Wisp bug or request a feature</string>
+    <string name="help_menu_repository">Wisp source repository</string>
+    <string name="help_menu_repository_subtitle">View the source code, releases, and project history</string>
     <string name="help_menu_email">Email keyboard@futo.org</string>
     <string name="help_menu_email_subtitle">Private feedback, help, or don\'t use GitHub? Email us</string>
     <string name="help_menu_email_tags">gmail, support, contact, help, broken, bug, error, issue, problem, complaint, ticket, payment, support, glitch, malfunction, fix, customer service, crash, question, inquiry, assistance</string>
@@ -661,16 +664,17 @@
     <string name="setup_step_1">Setup - Step 1</string>
     <string name="setup_step_2">Setup - Step 2</string>
     <string name="setup_step_3">Setup - Step 3</string>
-    <string name="setup_welcome_text">Welcome to FUTO Keyboard! It\'s still being developed so it may lack certain features or languages. We appreciate your patience and understanding.\n\nTo get started, enable FUTO Keyboard as an input method.</string>
+    <string name="setup_welcome_text">Welcome to Wisp Keyboard! It\'s still being developed, so it may lack certain features or languages. We appreciate your patience and understanding.\n\nTo get started, enable Wisp Keyboard as an input method.</string>
     <string name="setup_open_input_settings">Open Input Method Settings</string>
     <string name="setup_warning_multiple_versions">Warning: You seem to have both Play Store and Standalone versions installed, we only recommend installing one</string>
-    <string name="setup_active_input_method">Please select FUTO Keyboard as your active input method.</string>
+    <string name="setup_active_input_method">Please select Wisp Keyboard as your active input method.</string>
     <string name="setup_switch_input_methods">Switch Input Methods</string>
 
     <!-- Credits menu -->
     <string name="credits_title">Credits</string>
     <string name="credits_menu_title">Credits</string>
-    <string name="credits_menu_header_text">Thanks to these people for helping make FUTO Keyboard a great app!</string>
+    <string name="credits_menu_header_text">Thanks to everyone whose work helped make Wisp Keyboard possible.</string>
+    <string name="credits_menu_fork_notice">Wisp Keyboard is an independent, modified fork of FUTO Keyboard, which is based on LatinIME/AOSP. It is not affiliated with or endorsed by FUTO. Upstream copyright, license, contributor, and third-party notices are preserved below.</string>
     <string name="credits_menu_team_translators_title">Translators</string>
     <string name="credits_menu_team_keyboard_layouts_title">Layout contributors</string>
     <string name="credits_menu_team_code_title">Code contributors</string>

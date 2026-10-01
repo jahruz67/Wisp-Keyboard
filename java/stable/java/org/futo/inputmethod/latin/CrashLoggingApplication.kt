@@ -5,18 +5,11 @@ import android.app.Application
 import android.content.Context
 import android.os.Build
 import android.os.Process
-import android.os.UserManager
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.preferences.core.Preferences
 //import androidx.work.Configuration
 import org.acra.ACRA
-import org.acra.config.dialog
-//import org.acra.config.httpSender
-//import org.acra.sender.HttpSender
-import org.acra.config.mailSender
-import org.acra.data.StringFormat
-import org.acra.ktx.initAcra
 import androidx.core.content.edit
 import org.acra.builder.ReportBuilder
 import org.acra.config.CoreConfigurationBuilder
@@ -68,52 +61,8 @@ class CrashLoggingApplication : Application() /*, Configuration.Provider*/ {
             }
         }
 
-        if(BuildConfig.DEBUG) return
-
-        val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-        if(userManager.isUserUnlocked) {
-            println("Initializing ACRA, as user is unlocked")
-            initAcra {
-                reportFormat = StringFormat.JSON
-
-                dialog {
-                    text = getString(
-                        //if(BuildConfig.ENABLE_ACRA) {
-                        //    R.string.crashed_text
-                        //} else {
-                        R.string.crashed_text_email
-                        //}
-                    )
-                    title = getString(R.string.crashed_title)
-                    positiveButtonText = getString(R.string.crash_report_accept)
-                    negativeButtonText = getString(R.string.crash_report_reject)
-                    resTheme = android.R.style.Theme_DeviceDefault_Dialog
-                }
-
-
-                //if(BuildConfig.ENABLE_ACRA) {
-                //    httpSender {
-                //        uri = BuildConfig.ACRA_URL
-                //        basicAuthLogin = BuildConfig.ACRA_USER
-                //        basicAuthPassword = BuildConfig.ACRA_PASSWORD
-                //        httpMethod = HttpSender.Method.POST
-                //    }
-                //} else {
-                mailSender {
-                    mailTo = "keyboard@futo.org"
-                    reportAsFile = true
-                    reportFileName = "Crash.txt"
-                    subject = "Keyboard Crash Report"
-                    body =
-                        "I experienced this crash. My version: ${BuildConfig.VERSION_NAME}.\n\n(Enter details here if necessary)"
-                }
-                //}
-            }
-
-            acraInitialized = true
-        } else {
-            println("Skipping ACRA, as user is locked")
-        }
+        // Wisp intentionally does not initialize the upstream project's crash sender.
+        // Users can copy diagnostics and attach them to a Wisp issue.
     }
 
     companion object {

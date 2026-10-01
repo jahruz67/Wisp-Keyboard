@@ -96,13 +96,7 @@ fun Context.openURI(uri: String, newTask: Boolean = false) {
 }
 
 fun Context.openManualUpdateCheck() {
-    openURI("https://keyboard.futo.tech/manual_update?version=${BuildConfig.VERSION_CODE}&build=${BuildConfig.FLAVOR}".let {
-        if(BuildConfig.BRANCH != "master") {
-            it + "&branch=${BuildConfig.BRANCH}&name=${BuildConfig.VERSION_NAME}"
-        } else {
-            it
-        }
-    }, newTask = true)
+    openURI("https://github.com/jahruz67/Wisp-Keyboard/releases", newTask = true)
 }
 
 @Composable
@@ -170,7 +164,7 @@ fun ConditionalMigrateUpdateNotice() {
             ) {
                 Box(modifier = Modifier.weight(1.0f)) {
                     Button(onClick = {
-                        context.openURI("https://keyboard.futo.tech/#downloads")
+                        context.openURI("https://github.com/jahruz67/Wisp-Keyboard/releases")
                     }, modifier = Modifier.align(Alignment.Center)) {
                         Text(stringResource(R.string.manual_update_notice_visit_site_button))
                     }

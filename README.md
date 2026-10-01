@@ -1,39 +1,56 @@
 # Wisp Keyboard
 
-The goal is to make a good modern keyboard that stays semi-offline and doesn't spy on you. This keyboard is a fork of [LatinIME, The Android Open-Source Keyboard](https://android.googlesource.com/platform/packages/inputmethods/LatinIME), with significant changes made to it.
+Wisp Keyboard is an independent, community-maintained Android keyboard focused on privacy, offline use, and a clean, customizable typing experience.
 
-Check out the [FUTO Keyboard website](https://keyboard.futo.tech/) for downloads and more information.
+This project is a modified fork of [FUTO Keyboard](https://github.com/futo-org/android-keyboard), which is itself based on [LatinIME, the Android Open Source Project keyboard](https://android.googlesource.com/platform/packages/inputmethods/LatinIME). Wisp Keyboard is not affiliated with, endorsed by, or maintained by FUTO Holdings, Inc. The project has been renamed and visually rebranded to avoid confusion with the upstream application.
 
-The code is licensed under the [FUTO Source First License 1.1](LICENSE.md).
+## Highlights
 
-## Issue tracking and contributing
+- Local-first typing, suggestions, and voice input
+- Swipe typing and multilingual layouts
+- Custom themes, actions, clipboard tools, and add-ons
+- Importable dictionaries and language models
+- No advertising or sale of personal data
 
-Please check the GitHub repository to report issues: [https://github.com/futo-org/android-keyboard/](https://github.com/futo-org/android-keyboard/)
+## Downloads and support
 
-The source code is hosted on our [internal GitLab](https://gitlab.futo.org/keyboard/latinime) and mirrored to [GitHub](https://github.com/futo-org/android-keyboard/). As registration is closed on our internal GitLab, we use GitHub instead for issues and pull requests.
+Releases, source code, bug reports, and feature requests belong in this repository:
 
-Due to custom license, pull requests to this repository require signing a [CLA](https://cla.futo.org/) which you can do after opening a PR. Contributions to the [layouts repo](https://github.com/futo-org/futo-keyboard-layouts) don't require CLA as they're Apache-2.0
+- [Releases](https://github.com/jahruz67/Wisp-Keyboard/releases)
+- [Issues](https://github.com/jahruz67/Wisp-Keyboard/issues)
 
-If you want to help translate the app, please do so via our Pontoon instance: https://i18n-keyboard.futo.org/
-
-## Layouts
-
-If you want to contribute layouts, check out the [layouts repo](https://github.com/futo-org/futo-keyboard-layouts).
+Please do not use FUTO's support channels for Wisp-specific bugs or feature requests.
 
 ## Building
 
-When cloning the repository, you must perform a recursive clone to fetch all dependencies:
-```
-git clone --recursive https://gitlab.futo.org/keyboard/latinime.git
+Clone the repository with its submodules:
+
+```sh
+git clone --recursive https://github.com/jahruz67/Wisp-Keyboard.git
+cd Wisp-Keyboard
 ```
 
-If you forgot to specify recursive clone, use this to fetch submodules:
-```
+If the repository was cloned without submodules, initialize them separately:
+
+```sh
 git submodule update --init --recursive
 ```
 
-You can then open the project in Android Studio and build it that way, or use gradle commands:
-```
+Open the project in Android Studio, or build it from the command line:
+
+```sh
 ./gradlew assembleUnstableDebug
 ./gradlew assembleStableRelease
 ```
+
+## Contributing
+
+Contributions are welcome. Open an issue before a large change so the approach can be discussed, then submit a pull request to this repository.
+
+The upstream translation, layout, model, and library repositories remain connected as submodules. Changes intended for those upstream projects should be proposed to their respective maintainers.
+
+## License and upstream credit
+
+Wisp Keyboard contains modified FUTO Keyboard code and remains subject to the [FUTO Source First License 1.1-kb](LICENSE.md), along with the third-party notices in [NOTICE](NOTICE) and [java/NOTICE](java/NOTICE). The license permits non-commercial modification and free non-commercial distribution, requires a prominent modification notice, and requires the upstream payment functionality and licensor notices to remain in distributed copies.
+
+This repository is intended for non-commercial use and distribution. It is not the official FUTO Keyboard project. Thanks to FUTO Keyboard, LatinIME/AOSP, and all upstream contributors whose work made this fork possible.

@@ -219,6 +219,14 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.settings_fork_credit),
+                style = Typography.Small,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                textAlign = TextAlign.Center
+            )
             Spacer(modifier = Modifier.height(32.dp))
         }
         TextButton(onClick = {
