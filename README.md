@@ -21,6 +21,10 @@ Releases, source code, bug reports, and feature requests belong in this reposito
 
 Please do not use FUTO's support channels for Wisp-specific bugs or feature requests.
 
+## Website
+
+The project site lives in [`website/`](website/) and is deployed to GitHub Pages by [the Pages workflow](.github/workflows/pages.yml). After enabling **GitHub Actions** as the Pages source in the repository settings, pushes to `main` or `master` publish the site automatically.
+
 ## Building
 
 Clone the repository with its submodules:
