@@ -22,6 +22,17 @@ Deleting a user add-on erases its files, settings, secrets, grants, cached media
 action placements. System add-ons are built into Wisp, cannot be imported, and cannot be
 uninstalled.
 
+## Downloadable add-ons
+
+[KLIPY GIFs](klipy-gifs.zip) provides trending GIFs, search, animated previews, and insertion
+into apps that accept GIFs. Download the ZIP using GitHub's **Download raw file** button, then
+import it using the steps above. Its client API key is included. It is a user add-on and is
+not bundled into the keyboard APK.
+
+To install a newer ZIP with the same ID, delete the old add-on first, then import the new ZIP.
+The host currently rejects imports whose ID is already installed; increasing `versionCode`
+alone does not update an imported add-on.
+
 ## Source and ZIP layout
 
 ```text
@@ -126,8 +137,11 @@ the same sandbox API. Keyboard insertion and voice operations fail outside an ac
 
 ## JavaScript API
 
-The host injects `window.wisp` after the local page loads. Every call returns a Promise and rejects
-with an `Error` when validation, permission, network, or host operations fail.
+The host injects `window.wisp` into local HTML before page scripts run and retries injection in
+`onPageFinished`. Every call returns a Promise and rejects with an `Error` when validation,
+permission, network, or host operations fail. If supporting older host versions, wait for the
+bridge before calling it. Optional theme/settings reads should not prevent the panel's main
+functionality from starting if those reads fail.
 
 ```js
 await wisp.settings.get("safeSearch");
@@ -201,18 +215,40 @@ window.addEventListener("wisp:environment", event => {
 ### Focused keyboard flow
 
 Call `ui.showKeyboard()` only after an editable element is focused. The action manifest must set
-`canShowKeyboard` to `true`.
+`canShowKeyboard` to `true`. DOM focus and Chromium's native editor connection can become ready
+at different times: an immediate call from a `focus` listener can reject with **No editable
+add-on field is focused**. Allow a brief delay and bounded retry for that error. Also handle
+`click`, since tapping a field that already has DOM focus does not fire another `focus` event.
+Stop retrying if the user leaves the field.
 
 ```js
 const query = document.querySelector("#query");
 
-query.addEventListener("focus", async () => {
+let connecting = false;
+async function connectSearchKeyboard() {
+  if (connecting) return;
+  connecting = true;
   try {
-    await wisp.ui.showKeyboard();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 80 * (attempt + 1)));
+      if (document.activeElement !== query) return;
+      try {
+        await wisp.ui.showKeyboard();
+        return;
+      } catch (error) {
+        if (!/No editable add-on field is focused/i.test(error.message) || attempt === 4) {
+          throw error;
+        }
+      }
+    }
   } catch (error) {
-    console.error(error);
+    console.error(error); // Show this separately from network/search errors in the panel.
+  } finally {
+    connecting = false;
   }
-});
+}
+query.addEventListener("focus", connectSearchKeyboard);
+query.addEventListener("click", connectSearchKeyboard);
 
 async function submit() {
   await search(query.value);
@@ -229,6 +265,12 @@ close or resize behavior.
 The host disconnects the add-on input connection when the panel is disposed or the keyboard is
 dismissed. Add-ons should not retain focus as application state; restore focus only after an
 explicit user interaction.
+
+Android System WebView versions vary independently of the Android OS. Avoid making startup
+depend on optional browser APIs such as `crypto`, `Element.replaceChildren`, or
+`IntersectionObserver` without a fallback. For example, clear a container with `removeChild`
+and insert previews with `appendChild`. Keep startup errors visible and let retry/search actions
+reinitialize the panel after a failure.
 
 ### Network and GIF/media flow
 
@@ -288,8 +330,9 @@ remove the existing add-on before importing the new ZIP.
 
 ## Security behavior
 
-- JavaScript, file/content access, DOM persistence, cookies, popups, external navigation, remote
-  subresources, frames, forms, and mixed content are disabled or blocked.
+- Local JavaScript is enabled. File/content access, DOM persistence, cookies, popups, external
+  navigation, remote subresources, frames, form submissions, and mixed content are disabled or
+  blocked.
 - Package resources are served from a synthetic local HTTPS origin with a restrictive CSP.
 - Persistent settings, state, permission grants, and media are namespaced by add-on ID.
 - Network, text insertion, media insertion, and voice input require both manifest declaration and
