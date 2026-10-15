@@ -153,7 +153,7 @@ fun Context.inflateInlineSuggestion(inlineSuggestion: InlineSuggestion, onInflat
 @Composable
 fun RowScope.InlineSuggestions(suggestions: List<View>) {
     AndroidView(
-        factory = { InlineSuggestionsScrollView(it) },
+        factory = { InlineSuggestionsSurfaceHost(it) },
         update = { it.setSuggestions(suggestions) },
         onRelease = { it.setSuggestions(emptyList()) },
         modifier = Modifier

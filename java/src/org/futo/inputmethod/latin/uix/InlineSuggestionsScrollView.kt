@@ -9,7 +9,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import kotlin.math.roundToInt
 
-/** Scroll embedded autofill surfaces in the same native hierarchy that clips them. */
+/** Native scrolling and view clipping, inside InlineSuggestionsSurfaceHost's compositor crop. */
 internal class InlineSuggestionsScrollView(context: Context) : HorizontalScrollView(context) {
     private val chips = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -72,8 +72,8 @@ internal class InlineSuggestionsScrollView(context: Context) : HorizontalScrollV
                 view.width,
                 view.height,
             )
-            // Keep an explicit crop even when fully visible. SurfaceView must never expose its
-            // full surface for a frame while crossing the toolbar button's boundary.
+            // This view-local crop is supplemental. The stationary surface parent in
+            // InlineSuggestionsSurfaceHost enforces the viewport during compositor updates.
             val clip = bounds?.let { Rect(it.left, it.top, it.right, it.bottom) }
                 ?: Rect(0, 0, view.width, view.height)
             if (view.clipBounds != clip) view.clipBounds = clip

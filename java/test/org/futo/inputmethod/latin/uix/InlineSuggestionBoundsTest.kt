@@ -4,12 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
+// Geometry tests only: compositor clipping of remote autofill surfaces needs an on-device check.
 class InlineSuggestionBoundsTest {
     // A viewport offset by the action button, keyboard padding, and the window's vertical position.
     private val viewport = InlineSuggestionBounds(120, 500, 420, 538)
 
     @Test
-    fun fullyVisibleChipKeepsBothIcons() {
+    fun fullyVisibleChipDoesNotNeedAdditionalLocalClip() {
         assertNull(inlineSuggestionClipBounds(viewport, 124, 500, 160, 38))
     }
 
@@ -30,7 +31,7 @@ class InlineSuggestionBoundsTest {
     }
 
     @Test
-    fun offscreenChipIsHiddenAndBecomesFullyVisibleAfterScrollingBack() {
+    fun offscreenChipGetsEmptyClipAndClearsClipWhenScrolledBack() {
         assertEquals(
             InlineSuggestionBounds(0, 0, 0, 0),
             inlineSuggestionClipBounds(viewport, 450, 500, 160, 38)
@@ -39,7 +40,7 @@ class InlineSuggestionBoundsTest {
     }
 
     @Test
-    fun verticalOverflowCannotCoverKeyboardOrToolbarBorders() {
+    fun computedClipForVerticalOverflowFitsViewport() {
         assertEquals(
             InlineSuggestionBounds(0, 5, 160, 43),
             inlineSuggestionClipBounds(viewport, 124, 495, 160, 48)
@@ -63,7 +64,7 @@ class InlineSuggestionBoundsTest {
     }
 
     @Test
-    fun secondChipCrossesButtonBoundaryWithoutExposingAnyPixelsOverTheButton() {
+    fun computedClipForSecondChipStaysWithinViewportWhileScrolling() {
         val localViewport = InlineSuggestionBounds(0, 0, 300, 38)
         // Two 160px chips, each with a 4px margin on either side.
         val secondChipLeft = 172
