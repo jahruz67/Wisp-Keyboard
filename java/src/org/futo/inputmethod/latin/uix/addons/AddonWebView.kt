@@ -764,6 +764,10 @@ fun AddonWebPanel(
                 keyboardManager != null && addon.manifest.action.canShowKeyboard
             ) {
                 { inputConnection, editorInfo ->
+                    editorInfo.privateImeOptions = addonEditorPrivateImeOptions(
+                        editorInfo.inputType,
+                        editorInfo.privateImeOptions,
+                    )
                     keyboardManager.overrideInputConnection(inputConnection, editorInfo)
                 }
             } else {
