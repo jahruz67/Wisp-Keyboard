@@ -272,6 +272,11 @@ depend on optional browser APIs such as `crypto`, `Element.replaceChildren`, or
 and insert previews with `appendChild`. Keep startup errors visible and let retry/search actions
 reinitialize the panel after a failure.
 
+Keep the results container visible during keyboard-panel resizing. Anchor the outer page to
+the WebView edges (`position: fixed; top: 0; right: 0; bottom: 0; left: 0`) instead of relying
+only on `height: 100vh`, and give scrolling results a nonzero minimum height. Load the first
+few previews immediately; use intersection observation for the remaining offscreen results.
+
 ### Network and GIF/media flow
 
 Pages have no direct remote loading: CSP sets `connect-src 'none'`, and the WebView blocks non-local
