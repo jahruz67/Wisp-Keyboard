@@ -55,7 +55,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableIntState
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -823,7 +822,7 @@ fun ActionBar(
     suggestionStripListener: SuggestionStripViewListener,
     onActionActivated: (Action) -> Unit,
     onActionAltActivated: (Action) -> Unit,
-    inlineSuggestions: List<MutableState<View?>>,
+    inlineSuggestions: List<View>,
     isActionsExpanded: Boolean,
     toggleActionsExpanded: () -> Unit,
     importantNotice: ImportantNotice? = null,
@@ -892,20 +891,20 @@ fun ActionBar(
                         ActionItems(onActionActivated, onActionAltActivated)
                     }
                 } else {
-                    if (importantNotice != null) {
+                    if (importantNotice != null && inlineSuggestions.isEmpty()) {
                         ImportantNoticeView(importantNotice)
                     } else {
-                        if(loading) {
+                        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                            && inlineSuggestions.isNotEmpty()
+                        ) {
+                            InlineSuggestions(inlineSuggestions)
+                        } else if(loading) {
                             Spacer(Modifier.weight(1.0f))
                             CircularProgressIndicator(
                                 modifier = Modifier.size(32.dp).align(CenterVertically),
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(Modifier.weight(1.0f))
-                        } else if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                            && inlineSuggestions.isNotEmpty()
-                        ) {
-                            InlineSuggestions(inlineSuggestions)
                         } else if(quickClipState != null) {
                             QuickClipView(quickClipState, onQuickClipDismiss)
                         } else if (words != null) {

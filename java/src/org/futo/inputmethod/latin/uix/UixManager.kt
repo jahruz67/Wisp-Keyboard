@@ -21,7 +21,6 @@ import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import androidx.annotation.RequiresApi
-import org.futo.inputmethod.latin.utils.InputTypeUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -610,7 +609,11 @@ class UixManager(private val latinIME: LatinIME) {
     var currWindowAction: MutableState<Action?> = mutableStateOf(null)
     private var persistentStates: HashMap<Action, PersistentActionState?> = hashMapOf()
 
-    private var inlineSuggestions: MutableState<List<MutableState<View?>>> = mutableStateOf(emptyList())
+    private val inlineSuggestions = mutableStateOf<List<View>>(emptyList())
+    private val inlineSuggestionSession = InlineSuggestionSession<View> { views ->
+        inlineSuggestions.value = views
+        if (views.isNotEmpty()) currentNotice.value?.onDismiss(latinIME, true)
+    }
     private val keyboardManagerForAction = UixActionKeyboardManager(this, latinIME)
 
     private var mainKeyboardHidden = mutableStateOf(false)
@@ -709,12 +712,7 @@ class UixManager(private val latinIME: LatinIME) {
                 null
             }
 
-            val inlineSuggestions = run {
-                val isPassword = latinIME.currentInputEditorInfo?.let {
-                    InputTypeUtils.isPasswordInputType(it.inputType)
-                } ?: false
-                if(isPassword || !inlineStuffHiddenByTyping.value) inlineSuggestions.value else emptyList()
-            }
+            val inlineSuggestions = visibleInlineSuggestions()
 
             if(actionBarShown.value || inlineSuggestions.isNotEmpty()) {
                 ActionBar(
@@ -1332,11 +1330,7 @@ class UixManager(private val latinIME: LatinIME) {
                 Column {
                     Box(Modifier.onGloballyPositioned { floatingPreeditPosition.value = it })
                     // TODO: Refactor how we handle expandable suggestions here to not be a mess
-                    val isPassword = latinIME.currentInputEditorInfo?.let {
-                        InputTypeUtils.isPasswordInputType(it.inputType)
-                    } ?: false
-                    val inlineSuggestionsVisible = inlineSuggestions.value.isNotEmpty()
-                            && (isPassword || !inlineStuffHiddenByTyping.value)
+                    val inlineSuggestionsVisible = visibleInlineSuggestions().isNotEmpty()
                     val needToUseExpandableSuggestionUi =
                         expandableSuggestionCfg.value.useExpandableUi && suggestedWords.value?.size()?.equals(0) != true
                                 && mainKeyboardHidden.value == false
@@ -1532,19 +1526,37 @@ class UixManager(private val latinIME: LatinIME) {
 
     @RequiresApi(Build.VERSION_CODES.R)
     fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
-        if(latinIME.getSetting(ActionBarDisplayedSetting) == false) return false
-        if(latinIME.getSetting(InlineAutofillSetting) == false) return false
-
-        if(response.inlineSuggestions.isNotEmpty() == true){
-            currentNotice.value?.onDismiss(latinIME, true)
-            inlineStuffHiddenByTyping.value = false
+        if (!latinIME.getSetting(ActionBarDisplayedSetting)
+            || !latinIME.getSetting(InlineAutofillSetting)) {
+            inlineSuggestionSession.clear()
+            return false
         }
 
-        inlineSuggestions.value = response.inlineSuggestions.map {
-            latinIME.inflateInlineSuggestion(it)
+        val suggestions = response.inlineSuggestions
+        val generation = inlineSuggestionSession.beginResponse(suggestions.size) ?: return false
+        if (suggestions.isNotEmpty()) {
+            inlineStuffHiddenByTyping.value = false
+        }
+        suggestions.forEachIndexed { index, suggestion ->
+            latinIME.inflateInlineSuggestion(suggestion) { view ->
+                if (latinIME.getSetting(ActionBarDisplayedSetting)
+                    && latinIME.getSetting(InlineAutofillSetting)) {
+                    inlineSuggestionSession.onInflated(generation, index, view)
+                } else {
+                    inlineSuggestionSession.clear()
+                }
+            }
         }
 
         return true
+    }
+
+    private fun visibleInlineSuggestions(): List<View> {
+        if (!latinIME.getSetting(InlineAutofillSetting)
+            || !latinIME.getSetting(ActionBarDisplayedSetting)) return emptyList()
+        val inputType = editorInfo?.inputType ?: 0
+        return if (shouldShowInlineSuggestions(inputType, inlineStuffHiddenByTyping.value)) inlineSuggestions.value
+        else emptyList()
     }
 
     fun triggerActionInternalFromIme(id: Int, alt: Boolean) {
@@ -1700,19 +1712,18 @@ class UixManager(private val latinIME: LatinIME) {
 
     private val quickClipState: MutableState<QuickClipState?> = mutableStateOf(null)
     fun dismissQuickClips() { quickClipState.value = null }
-    fun inputStarted(editorInfo: EditorInfo?) {
+    fun inputStarted(editorInfo: EditorInfo?, restarting: Boolean) {
         try {
             checkIfDictInstalled()
         } catch(e: Exception) {
             e.printStackTrace()
         }
-        val isDifferentField = this.editorInfo?.packageName != editorInfo?.packageName ||
-                this.editorInfo?.fieldId != editorInfo?.fieldId ||
-                this.editorInfo?.inputType != editorInfo?.inputType
-        if (isDifferentField) {
-            inlineSuggestions.value = emptyList()
+        val reset = inlineSuggestionSession.startInput(editorInfo?.let {
+            InlineInputField(it.packageName, it.fieldId, it.fieldName, inlineSuggestionFieldType(it.inputType))
+        }, restarting)
+        if (reset) {
+            inlineStuffHiddenByTyping.value = false
         }
-        inlineStuffHiddenByTyping.value = false
         this.editorInfo = editorInfo
 
         currTutorialMode.value = tutorialMode
@@ -1740,7 +1751,7 @@ class UixManager(private val latinIME: LatinIME) {
 
     fun onInputFinishing() {
         onWindowHidden()
-        inlineSuggestions.value = emptyList()
+        inlineSuggestionSession.finishInput()
     }
 
     // Called by InputLogic on any event
