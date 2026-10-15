@@ -61,4 +61,35 @@ class InlineSuggestionBoundsTest {
             inlineSuggestionClipBounds(viewport, 20, 500, 500, 38)
         )
     }
+
+    @Test
+    fun secondChipCrossesButtonBoundaryWithoutExposingAnyPixelsOverTheButton() {
+        val localViewport = InlineSuggestionBounds(0, 0, 300, 38)
+        // Two 160px chips, each with a 4px margin on either side.
+        val secondChipLeft = 172
+        for (scrollX in 160..340) {
+            val x = secondChipLeft - scrollX
+            val clip = inlineSuggestionClipBounds(localViewport, x, 0, 160, 38)
+                ?: InlineSuggestionBounds(0, 0, 160, 38)
+            if (clip.right > clip.left) {
+                assertEquals(0.coerceAtLeast(x), x + clip.left)
+                assertEquals(300.coerceAtMost(x + 160), x + clip.right)
+            } else {
+                assertEquals(InlineSuggestionBounds(0, 0, 0, 0), clip)
+            }
+        }
+    }
+
+    @Test
+    fun chipCrossingTheRightSideButtonBoundaryIsClippedInRtlLayouts() {
+        val localViewport = InlineSuggestionBounds(0, 0, 300, 38)
+        assertEquals(
+            InlineSuggestionBounds(0, 0, 60, 38),
+            inlineSuggestionClipBounds(localViewport, 240, 0, 160, 38)
+        )
+        assertEquals(
+            InlineSuggestionBounds(0, 0, 0, 0),
+            inlineSuggestionClipBounds(localViewport, 300, 0, 160, 38)
+        )
+    }
 }

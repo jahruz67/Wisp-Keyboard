@@ -19,6 +19,10 @@ Releases, source code, bug reports, and feature requests belong in this reposito
 - [Releases](https://github.com/jahruz67/Wisp-Keyboard/releases)
 - [Issues](https://github.com/jahruz67/Wisp-Keyboard/issues)
 
+Pushes to `main` or `master` automatically publish a GitHub Release after the APK build succeeds.
+Each release includes the APK, SHA-256 checksums, and generated release notes under a unique
+`build-<run number>-<commit>` tag. Pull-request builds do not publish releases.
+
 Please do not use FUTO's support channels for Wisp-specific bugs or feature requests.
 
 ## Website

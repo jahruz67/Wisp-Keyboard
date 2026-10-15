@@ -2,7 +2,6 @@ package org.futo.inputmethod.latin.uix
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
@@ -10,7 +9,6 @@ import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewTreeObserver
 import android.view.inputmethod.InlineSuggestion
 import android.view.inputmethod.InlineSuggestionsRequest
 import android.widget.inline.InlinePresentationSpec
@@ -20,32 +18,13 @@ import androidx.autofill.inline.common.ImageViewStyle
 import androidx.autofill.inline.common.TextViewStyle
 import androidx.autofill.inline.common.ViewStyle
 import androidx.autofill.inline.v1.InlineSuggestionUi
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.LocalOverscrollConfiguration
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.ViewCompat
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.settings.pages.ActionBarDisplayedSetting
 import org.futo.inputmethod.latin.uix.settings.pages.InlineAutofillSetting
@@ -172,91 +151,14 @@ fun Context.inflateInlineSuggestion(inlineSuggestion: InlineSuggestion, onInflat
 
 @RequiresApi(Build.VERSION_CODES.R)
 @Composable
-private fun InlineSuggestionView(view: View, viewport: InlineSuggestionBounds?) {
-    val location = remember(view) { IntArray(2) }
-
-    fun updateClipping() {
-        // InlineContentView contains a SurfaceView, so Compose's clip alone is insufficient.
-        // Both positions must be in window coordinates, including scroll and keyboard offsets.
-        view.getLocationInWindow(location)
-        val bounds = inlineSuggestionClipBounds(
-            viewport, location[0], location[1], view.width, view.height
-        )
-        val clip = bounds?.let { Rect(it.left, it.top, it.right, it.bottom) }
-        if (view.clipBounds != clip) view.clipBounds = clip
-    }
-
-    DisposableEffect(view, viewport) {
-        val listener = ViewTreeObserver.OnPreDrawListener {
-            updateClipping()
-            true
-        }
-        var observer: ViewTreeObserver? = null
-        fun removeListener() {
-            observer?.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
-            observer = null
-        }
-        fun addListener() {
-            removeListener()
-            observer = view.viewTreeObserver.also { it.addOnPreDrawListener(listener) }
-        }
-        val attachListener = object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(v: View) = addListener()
-            override fun onViewDetachedFromWindow(v: View) = removeListener()
-        }
-        view.addOnAttachStateChangeListener(attachListener)
-        if (view.isAttachedToWindow) addListener()
-        onDispose {
-            view.removeOnAttachStateChangeListener(attachListener)
-            removeListener()
-        }
-    }
-
-    Box(Modifier.padding(horizontal = 4.dp)) {
-        AndroidView(
-            factory = {
-                (view.parent as? ViewGroup)?.removeView(view)
-                ViewCompat.setNestedScrollingEnabled(view, true)
-                view
-            },
-            update = { updateClipping() },
-            modifier = Modifier.onGloballyPositioned { updateClipping() }
-        )
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Suppress("DEPRECATION")
-@RequiresApi(Build.VERSION_CODES.R)
-@Composable
 fun RowScope.InlineSuggestions(suggestions: List<View>) {
-    val scrollState = rememberScrollState()
-    var viewport by remember { mutableStateOf<InlineSuggestionBounds?>(null) }
-
-    Box(
+    AndroidView(
+        factory = { InlineSuggestionsScrollView(it) },
+        update = { it.setSuggestions(suggestions) },
+        onRelease = { it.setSuggestions(emptyList()) },
         modifier = Modifier
             .weight(1.0f)
             .fillMaxHeight()
             .clipToBounds()
-            .onGloballyPositioned {
-                val bounds = it.boundsInWindow()
-                viewport = InlineSuggestionBounds(
-                    bounds.left.roundToInt(), bounds.top.roundToInt(),
-                    bounds.right.roundToInt(), bounds.bottom.roundToInt()
-                )
-            }
-    ) {
-        CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .horizontalScroll(scrollState),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                suggestions.forEach { view ->
-                    key(view) { InlineSuggestionView(view, viewport) }
-                }
-            }
-        }
-    }
+    )
 }
