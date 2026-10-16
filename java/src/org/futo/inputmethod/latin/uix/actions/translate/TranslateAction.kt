@@ -502,6 +502,9 @@ val TranslateAction = Action(
         object : ActionWindow() {
             private val hasSupplementalContent = mutableStateOf(false)
 
+            // The editor takes over keyboard input as soon as it is composed. Start in
+            // the compact layout so that handoff cannot flash the full-height editor.
+            override val onlyShowAboveKeyboard: Boolean get() = true
             override val showCloseButton: Boolean get() = false
             override val positionIsUserManagable: Boolean get() = false
             override val fixedWindowHeightWhenKeyboardShown
