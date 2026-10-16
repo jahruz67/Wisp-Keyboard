@@ -247,6 +247,10 @@ class DataStoreHelper {
         @Volatile
         private var initialized: Boolean = false
 
+        // init() may be called by both Application and the IME before the first
+        // disk read finishes. Only one worker and one ongoing collector are needed.
+        private var initializationStarted: Boolean = false
+
         @Volatile
         private var currentPreferences: Preferences = preferencesOf()
 
@@ -255,7 +259,8 @@ class DataStoreHelper {
         @JvmStatic
         @Synchronized
         fun init(context: Context) {
-            if(initialized) return
+            if(initializationStarted) return
+            initializationStarted = true
 
             val appContext = context.applicationContext
             Thread({

@@ -196,7 +196,9 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
         return drawables[i]
     }
 
-    val icons: HashMap<String, Drawable?> = hashMapOf()
+    // Most action and language-specific icons are unused by the current layout.
+    // Inflate/decode only requested icons, once per theme provider.
+    private val icons: HashMap<String, Lazy<Drawable?>> = hashMapOf()
     override fun getIcon(iconName: String): Drawable? {
         if(iconName == KeyboardIconsSet.ICON_UNDEFINED) return null
 
@@ -204,7 +206,7 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
             Log.e("BasicThemeProvider", "Unknown icon $iconName")
         }
 
-        return icons[iconName]
+        return icons[iconName]?.value
     }
 
     val keyStyles: Map<KeyVisualStyle, VisualStyleDescriptor>
@@ -282,15 +284,18 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
     val showKeyHints: Boolean
 
     private fun addIcon(iconName: String, drawableIntResId: Int, tint: Int) {
-        addIcon(iconName, AppCompatResources.getDrawable(
-            context,
-            drawableIntResId
-        ), tint)
+        icons[iconName] = lazy { AppCompatResources.getDrawable(context, drawableIntResId) }
     }
 
     private fun addIcon(iconName: String, drawable: Drawable?, tint: Int) {
-        icons[iconName] = drawable?.apply {
-            //setTint(tint) // breaks some stuff, its set anyway before drawing in KeyboardView now ?
+        icons[iconName] = lazyOf(drawable)
+    }
+
+    private fun addActionIcon(iconName: String, action: Action) {
+        icons[iconName] = lazy {
+            action.dynamicIconPath?.let { path ->
+                decodeAddonIcon(path)?.let { bitmap -> BitmapDrawable(context.resources, bitmap) }
+            } ?: AppCompatResources.getDrawable(context, action.icon)
         }
     }
 
@@ -397,26 +402,12 @@ class BasicThemeProvider(val context: Context, val colorScheme: KeyboardColorSch
 
         // Add by name (action_emoji)
         AllActionsMap.forEach { (i, it) ->
-            addIcon(
-                "action_${i}",
-                it.dynamicIconPath?.let { path ->
-                    decodeAddonIcon(path)?.let { bitmap -> BitmapDrawable(context.resources, bitmap) }
-                }
-                    ?: AppCompatResources.getDrawable(context, it.icon),
-                onKeyColor
-            )
+            addActionIcon("action_${i}", it)
         }
 
         // Add by id (action_0)
         AllActions.forEachIndexed { i, it ->
-            addIcon(
-                "action_${i}",
-                it.dynamicIconPath?.let { path ->
-                    decodeAddonIcon(path)?.let { bitmap -> BitmapDrawable(context.resources, bitmap) }
-                }
-                    ?: AppCompatResources.getDrawable(context, it.icon),
-                onKeyColor
-            )
+            addActionIcon("action_${i}", it)
         }
 
         if(!showKeyHints) {

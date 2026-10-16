@@ -216,6 +216,37 @@ tasks.register('packageAddons') {
 
 preBuild.dependsOn packageAddons
 
+// Resolve layout paths during the build so the first key press does not require a
+// recursive AssetManager.list() scan of every bundled layout on the device.
+def layoutAssetsDirectory = file('java/assets/layouts')
+def generatedLayoutAssetsDirectory = file("$buildDir/generated/layout-assets")
+def layoutAssetFiles = fileTree(layoutAssetsDirectory) {
+    include '**/*.yaml', '**/*.yml'
+    exclude 'mapping.yaml', 'names.yaml'
+    // Android does not package dotfiles/directories (such as .github templates).
+    exclude '**/.*', '**/.*/**'
+}
+
+tasks.register('generateLayoutIndex') {
+    inputs.files(layoutAssetFiles).withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.dir(generatedLayoutAssetsDirectory)
+
+    doLast {
+        def paths = layoutAssetFiles.files.collect { layoutFile ->
+            'layouts/' + layoutAssetsDirectory.toPath().relativize(layoutFile.toPath())
+                    .toString().replace('\\', '/')
+        }.sort()
+        if (paths.isEmpty()) {
+            throw new GradleException('No keyboard layouts found; initialize the layouts submodule.')
+        }
+        generatedLayoutAssetsDirectory.mkdirs()
+        file("$generatedLayoutAssetsDirectory/layout-index.txt").setText(
+                paths.join('\n') + '\n', 'UTF-8')
+    }
+}
+
+preBuild.dependsOn generateLayoutIndex
+
 tasks.register('updateContributors') {
     def script = file('tools/contributors.py')
     def outputFile = file('java/src/org/futo/inputmethod/latin/uix/settings/pages/credits/Contributors.kt')
@@ -390,7 +421,7 @@ android {
             ]
             java.srcDirs = ['common/src', 'java/src']
             manifest.srcFile 'java/AndroidManifest.xml'
-            assets.srcDirs = ['java/assets', generatedAddonAssetsDirectory]
+            assets.srcDirs = ['java/assets', generatedAddonAssetsDirectory, generatedLayoutAssetsDirectory]
         }
 
         playstore {

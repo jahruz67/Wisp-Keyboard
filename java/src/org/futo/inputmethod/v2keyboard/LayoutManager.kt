@@ -1,7 +1,6 @@
 package org.futo.inputmethod.v2keyboard
 
 import android.content.Context
-import android.content.res.AssetManager
 import android.util.Log
 import com.charleskorn.kaml.PolymorphismStyle
 import com.charleskorn.kaml.Yaml
@@ -32,21 +31,6 @@ object LayoutManager {
     private var appContext: Context? = null
     private var initialized = false
 
-    private fun listFilesRecursively(assetManager: AssetManager, path: String): List<String> {
-        val files = assetManager.list(path)
-        return if(files.isNullOrEmpty()) {
-            listOf(path)
-        } else {
-            files.flatMap { listFilesRecursively(assetManager, "$path/$it") }
-        }
-    }
-
-    private fun getAllLayoutPaths(assetManager: AssetManager): List<String> {
-        return listFilesRecursively(assetManager, "layouts").filter {
-            (it.endsWith(".yml") || it.endsWith(".yaml")) && it != "layouts/mapping.yaml"
-        }
-    }
-
     fun init(context: Context) {
         if(initialized) return
         appContext = context.applicationContext
@@ -60,11 +44,11 @@ object LayoutManager {
     private fun getLayoutsById(context: Context): Map<String, LazyKeyboard> {
         return layoutsById ?: synchronized(this) {
             layoutsById ?: run {
-                val assetManager = context.applicationContext.assets
-                val layoutPaths = getAllLayoutPaths(assetManager)
-                val map = layoutPaths.filter { it != "layouts/names.yaml" }.associate { path ->
-                    val keyboard = LazyKeyboard(path)
-                    keyboard.filename to keyboard
+                val map = context.applicationContext.assets.open("layout-index.txt").bufferedReader().use { reader ->
+                    reader.lineSequence().filter { it.isNotBlank() }.associate { path ->
+                        val keyboard = LazyKeyboard(path)
+                        keyboard.filename to keyboard
+                    }
                 }
                 allLayoutNames = map.keys.toList()
                 layoutsById = map
