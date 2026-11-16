@@ -18,12 +18,6 @@ import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import androidx.lifecycle.LifecycleCoroutineScope
-import com.konovalov.vad.Vad
-import com.konovalov.vad.config.FrameSize
-import com.konovalov.vad.config.Mode
-import com.konovalov.vad.config.Model
-import com.konovalov.vad.config.SampleRate
-import com.konovalov.vad.models.VadModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -44,8 +38,6 @@ import org.futo.voiceinput.shared.whisper.MultiModelRunConfiguration
 import org.futo.voiceinput.shared.whisper.MultiModelRunner
 import org.futo.voiceinput.shared.whisper.isBlankResult
 import java.nio.FloatBuffer
-import java.nio.ShortBuffer
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -80,8 +72,7 @@ private fun getRecordingDeviceKind(type: Int): String {
 data class RecordingSettings(
     val preferBluetoothMic: Boolean,
     val requestAudioFocus: Boolean,
-    val canExpandSpace: Boolean,
-    val useVADAutoStop: Boolean
+    val canExpandSpace: Boolean
 )
 
 data class AudioRecognizerSettings(
@@ -191,7 +182,6 @@ class AudioRecognizer(
     private val modelRunner = MultiModelRunner(modelManager)
 
     private val canExpandSpace = settings.recordingConfiguration.canExpandSpace
-    private val useVAD = settings.recordingConfiguration.useVADAutoStop
 
     private var floatSamples: FloatBuffer = FloatBuffer.allocate(16000 * 30)
     private var recorderJob: Job? = null
@@ -364,7 +354,7 @@ class AudioRecognizer(
         return false
     }
 
-    private suspend fun recordingJob(recorder: AudioRecord, vad: VadModel?) {
+    private suspend fun recordingJob(recorder: AudioRecord) {
         var hasTalked = false
         var anyNoiseAtAll = false
 
@@ -377,10 +367,6 @@ class AudioRecognizer(
         }
         var isMicBlocked = false
 
-        val vadSampleBuffer = ShortBuffer.allocate(480)
-        var numConsecutiveNonSpeech = 0
-        var numConsecutiveSpeech = 0
-
         val samples = ShortArray(1600)
 
         while (isRecording) {
@@ -389,10 +375,8 @@ class AudioRecognizer(
             if (nRead <= 0) break
             yield()
 
-            var isRunningOutOfSpace = (floatSamples.remaining() < nRead.coerceAtLeast(1600)) && !expandSpaceIfAllowed()
-
-            val hasNotTalkedRecently = hasTalked && (numConsecutiveNonSpeech > 66) && useVAD
-            if (isRunningOutOfSpace || hasNotTalkedRecently) {
+            val isRunningOutOfSpace = (floatSamples.remaining() < nRead.coerceAtLeast(1600)) && !expandSpaceIfAllowed()
+            if (isRunningOutOfSpace) {
                 yield()
                 withContext(Dispatchers.Main) {
                     finish()
@@ -400,49 +384,14 @@ class AudioRecognizer(
                 return
             }
 
-            // Run VAD
-            if(useVAD && vad != null) {
-                var remainingSamples = nRead
-                var offset = 0
-                while (remainingSamples > 0) {
-                    if (!vadSampleBuffer.hasRemaining()) {
-                        val isSpeech = vad.isSpeech(vadSampleBuffer.array())
-                        vadSampleBuffer.clear()
-                        vadSampleBuffer.rewind()
-
-                        if (!isSpeech) {
-                            numConsecutiveNonSpeech++
-                            numConsecutiveSpeech = 0
-                        } else {
-                            numConsecutiveNonSpeech = 0
-                            numConsecutiveSpeech++
-                        }
-                    }
-
-                    val samplesToRead = min(min(remainingSamples, 480), vadSampleBuffer.remaining())
-                    for (i in 0 until samplesToRead) {
-                        vadSampleBuffer.put(
-                            samples[offset]
-                        )
-                        offset += 1
-                        remainingSamples -= 1
-                    }
-                }
-            }
-
             floatSamples.put(samples.sliceArray(0 until nRead).map { it.toFloat() / Short.MAX_VALUE.toFloat() }.toFloatArray())
 
             // Don't set hasTalked if the start sound may still be playing, otherwise on some
             // devices the rms just explodes and `hasTalked` is always true
             val startSoundPassed = (floatSamples.position() > 16000 * 0.6)
-            if (!startSoundPassed) {
-                numConsecutiveSpeech = 0
-                numConsecutiveNonSpeech = 0
-            }
-
             val rms = sqrt(samples.sumOf { (it.toFloat() / Short.MAX_VALUE.toFloat()).pow(2).toDouble() } / samples.size).toFloat()
 
-            if (startSoundPassed && ((rms > 0.01) || (numConsecutiveSpeech > 8))) {
+            if (startSoundPassed && rms > 0.01) {
                 hasTalked = true
             }
 
@@ -496,12 +445,6 @@ class AudioRecognizer(
         println("isRecording loop exited")
     }
 
-    private fun createVad(): VadModel {
-        return Vad.builder().setModel(Model.WEB_RTC_GMM).setMode(Mode.VERY_AGGRESSIVE)
-            .setFrameSize(FrameSize.FRAME_SIZE_480).setSampleRate(SampleRate.SAMPLE_RATE_16K)
-            .setSpeechDurationMs(150).setSilenceDurationMs(300).build()
-    }
-
     @Throws(SecurityException::class)
     private fun createRecorderAndJob(preferBluetoothMic: Boolean): MicrophoneDeviceState {
         isRecording = false
@@ -521,13 +464,7 @@ class AudioRecognizer(
 
             recorderJob = lifecycleScope.launch {
                 withContext(Dispatchers.Default) {
-                    if(useVAD) {
-                        createVad().use { vad ->
-                            recordingJob(recorder, vad)
-                        }
-                    } else {
-                        recordingJob(recorder, null)
-                    }
+                    recordingJob(recorder)
                 }
             }
         }

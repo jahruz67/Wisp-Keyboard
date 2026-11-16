@@ -877,7 +877,7 @@ val TypingSettingsMenu = UserSettingsMenu(
             title = R.string.auto_cap,
             subtitle = R.string.auto_cap_summary,
             key = Settings.PREF_AUTO_CAP,
-            default = {true},
+            default = {false},
             icon = {
                 Text("Aa", style = Typography.Body.MediumMl, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f))
             }
@@ -886,7 +886,7 @@ val TypingSettingsMenu = UserSettingsMenu(
             title = R.string.use_double_space_period,
             subtitle = R.string.use_double_space_period_summary,
             key = Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD,
-            default = {true},
+            default = {false},
             icon = {
                 Text(".", style = Typography.Body.MediumMl, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f))
             }

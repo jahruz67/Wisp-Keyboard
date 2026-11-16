@@ -47,7 +47,6 @@ import org.futo.inputmethod.latin.uix.GROQ_WHISPER_MODEL
 import org.futo.inputmethod.latin.uix.OFFLINE_MODE
 import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.USE_PERSONAL_DICT
-import org.futo.inputmethod.latin.uix.USE_VAD_AUTOSTOP
 import org.futo.inputmethod.latin.uix.deferSetSetting
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.getSettingBlocking
@@ -453,12 +452,6 @@ private val offlineLongForm = userSettingToggleDataStore(
     setting = CAN_EXPAND_SPACE
 ).copy(visibilityCheck = isOfflineMode)
 
-private val offlineAutostopVad = userSettingToggleDataStore(
-    title = R.string.voice_input_settings_autostop_vad,
-    subtitle = R.string.voice_input_settings_autostop_vad_subtitle,
-    setting = USE_VAD_AUTOSTOP
-).copy(visibilityCheck = isOfflineMode)
-
 private val offlineAnimateBubble = userSettingToggleDataStore(
     title = R.string.voice_input_settings_animate_bubble,
     subtitle = R.string.voice_input_settings_animate_bubble_subtitle,
@@ -489,7 +482,6 @@ val VoiceInputMenu = UserSettingsMenu(
         offlineAudioFocus,
         offlineSuppressSymbols,
         offlineLongForm,
-        offlineAutostopVad,
         offlineAnimateBubble,
         offlineChangeModels,
 

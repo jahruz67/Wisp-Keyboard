@@ -60,7 +60,8 @@ data class ChatRequest(
 
 @Serializable
 data class ChatChoice(
-    val message: ChatMessage? = null
+    val message: ChatMessage? = null,
+    val finish_reason: String? = null
 )
 
 @Serializable
@@ -105,7 +106,10 @@ object GroqRecognizer {
             val requestBody = json.encodeToString(request)
             val response = sendChatCompletion(apiKey, requestBody)
             val chatResponse = json.decodeFromString<ChatResponse>(response)
-            val correctedText = chatResponse.choices.firstOrNull()?.message?.content?.trim() ?: text
+            // Keep the full transcript if enhancement was cut short by its output limit.
+            val correctedText = chatResponse.choices.firstOrNull()
+                ?.takeIf { it.finish_reason == "stop" }
+                ?.message?.content?.trim()?.takeIf { it.isNotEmpty() } ?: text
             Result.success(correctedText)
         } catch (e: Exception) {
             Log.e(TAG, "Text enhancement failed", e)

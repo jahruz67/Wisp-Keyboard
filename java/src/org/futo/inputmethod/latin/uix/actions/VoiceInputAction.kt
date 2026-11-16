@@ -55,7 +55,6 @@ import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.PersistentActionState
 import org.futo.inputmethod.latin.uix.ResourceHelper
 import org.futo.inputmethod.latin.uix.USE_PERSONAL_DICT
-import org.futo.inputmethod.latin.uix.USE_VAD_AUTOSTOP
 import org.futo.inputmethod.latin.uix.VERBOSE_PROGRESS
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSetting
@@ -64,6 +63,7 @@ import org.futo.inputmethod.latin.uix.utils.ModelOutputSanitizer
 import org.futo.inputmethod.latin.xlm.UserDictionaryObserver
 import org.futo.inputmethod.updates.openURI
 import org.futo.voiceinput.shared.GroqRecognizer
+import org.futo.voiceinput.shared.capturePcmAudio
 import org.futo.voiceinput.shared.pauseMediaIfPlaying
 import org.futo.voiceinput.shared.resumeMedia
 import org.futo.voiceinput.shared.ModelDoesNotExistException
@@ -164,7 +164,6 @@ private class VoiceInputActionWindow(
         val useBluetoothAudio = context.getSetting(PREFER_BLUETOOTH)
         val requestAudioFocus = context.getSetting(AUDIO_FOCUS)
         val canExpandSpace = context.getSetting(CAN_EXPAND_SPACE)
-        val useVAD = context.getSetting(USE_VAD_AUTOSTOP)
         val usePersonalDict = context.getSetting(USE_PERSONAL_DICT)
         val animateBubble = context.getSetting(ANIMATE_BUBBLE)
 
@@ -195,8 +194,7 @@ private class VoiceInputActionWindow(
             recordingConfiguration = RecordingSettings(
                 preferBluetoothMic = useBluetoothAudio,
                 requestAudioFocus = requestAudioFocus,
-                canExpandSpace = canExpandSpace,
-                useVADAutoStop = useVAD
+                canExpandSpace = canExpandSpace
             )
         )
     }
@@ -512,9 +510,9 @@ private class GroqVoiceInputActionWindow(
         stopRequested = false
 
         // Pause media only if it's actively playing — track whether we paused it
-        wasMediaPlaying = pauseMediaIfPlaying(context)
+        wasMediaPlaying = pauseMediaIfPlaying(context) || wasMediaPlaying
 
-        recordingJob = manager.getLifecycleScope().launch(Dispatchers.Default) {
+        recordingJob = manager.getLifecycleScope().launch(Dispatchers.IO) {
             try {
                 recordAudio()
                 // Normal completion after the user requested that recording stop.
@@ -545,27 +543,30 @@ private class GroqVoiceInputActionWindow(
 
     private suspend fun recordAudio() {
         val sampleRate = 16000
-        val bufferSize = android.media.AudioRecord.getMinBufferSize(
+        val minBufferSize = android.media.AudioRecord.getMinBufferSize(
             sampleRate,
             android.media.AudioFormat.CHANNEL_IN_MONO,
             android.media.AudioFormat.ENCODING_PCM_16BIT
         )
+        check(minBufferSize > 0) { "Microphone recording is unavailable on this device" }
+        val bufferSize = minBufferSize.coerceAtLeast(sampleRate * 2 * 5)
 
         val recorder = android.media.AudioRecord(
             android.media.MediaRecorder.AudioSource.VOICE_RECOGNITION,
             sampleRate,
             android.media.AudioFormat.CHANNEL_IN_MONO,
             android.media.AudioFormat.ENCODING_PCM_16BIT,
-            bufferSize.coerceAtLeast(4096)
+            bufferSize
         )
 
+        var magnitudeJob: kotlinx.coroutines.Job? = null
         try {
-            if (recorder.state != android.media.AudioRecord.STATE_INITIALIZED) {
-                withContext(Dispatchers.Main) {
-                    currentViewState = CurrentView.Error
-                    errorText = "Failed to initialize audio recorder"
-                }
-                return
+            check(recorder.state == android.media.AudioRecord.STATE_INITIALIZED) {
+                "Failed to initialize audio recorder"
+            }
+            recorder.startRecording()
+            check(recorder.recordingState == android.media.AudioRecord.RECORDSTATE_RECORDING) {
+                "Failed to start audio recorder"
             }
 
             withContext(Dispatchers.Main) {
@@ -577,38 +578,24 @@ private class GroqVoiceInputActionWindow(
                 currentViewState = CurrentView.InnerRecognize
             }
 
-            recorder.startRecording()
-
-            val shortBuffer = ShortArray(1600)
             var totalSamples = 0
             val maxSamples = sampleRate * 120 // 2 minutes max
             val recordedChunks = mutableListOf<FloatArray>()
             var hasTalked = false
 
-            while (!stopRequested && totalSamples < maxSamples) {
-                yield()
-                val nRead = recorder.read(
-                    shortBuffer,
-                    0,
-                    shortBuffer.size,
-                    android.media.AudioRecord.READ_NON_BLOCKING
-                )
-                if (nRead <= 0) {
-                    kotlinx.coroutines.delay(50)
-                    continue
-                }
-
+            capturePcmAudio(recorder, bufferSize, { stopRequested }) { shortBuffer, nRead ->
+                val sampleCount = minOf(nRead, maxSamples - totalSamples)
                 var sumSq = 0.0
-                val chunk = FloatArray(nRead)
-                for (i in 0 until nRead) {
+                val chunk = FloatArray(sampleCount)
+                for (i in 0 until sampleCount) {
                     val floatSample = shortBuffer[i].toFloat() / Short.MAX_VALUE.toFloat()
                     chunk[i] = floatSample
                     sumSq += floatSample * floatSample
                 }
                 recordedChunks.add(chunk)
-                totalSamples += nRead
+                totalSamples += sampleCount
 
-                val rms = sqrt(sumSq / nRead).toFloat()
+                val rms = sqrt(sumSq / sampleCount).toFloat()
                 if (rms > 0.01f) {
                     hasTalked = true
                 }
@@ -619,10 +606,15 @@ private class GroqVoiceInputActionWindow(
                     MagnitudeState.NOT_TALKED_YET
                 }
 
-                withContext(Dispatchers.Main) {
-                    magnitudeState.floatValue = magnitude
-                    statusState.value = state
+                if (!stopRequested && magnitudeJob?.isActive != true) {
+                    magnitudeJob = manager.getLifecycleScope().launch(Dispatchers.Main) {
+                        if (!stopRequested && currentViewState == CurrentView.InnerRecognize) {
+                            magnitudeState.floatValue = magnitude
+                            statusState.value = state
+                        }
+                    }
                 }
+                totalSamples < maxSamples
             }
 
             audioBuffer = FloatArray(totalSamples).also { recordedSamples ->
@@ -633,6 +625,7 @@ private class GroqVoiceInputActionWindow(
                 }
             }
         } finally {
+            magnitudeJob?.cancel()
             try {
                 if (recorder.recordingState == android.media.AudioRecord.RECORDSTATE_RECORDING) {
                     recorder.stop()
@@ -651,95 +644,94 @@ private class GroqVoiceInputActionWindow(
         }
     }
 
-    private fun transcribeGroq() {
-        manager.getLifecycleScope().launch(Dispatchers.Default) {
-            try {
-                val apiKey = context.getSetting(GROQ_API_KEY)
-                if (apiKey.isBlank()) {
-                    withContext(Dispatchers.Main) {
-                        currentViewState = CurrentView.Error
-                        errorText = "Groq API key not set. Please configure it in Settings."
-                    }
-                    return@launch
-                }
-
-                val whisperModel = context.getSetting(GROQ_WHISPER_MODEL)
-                val whisperLanguage = context.getSetting(GROQ_WHISPER_LANGUAGE)
-                val aiModel = context.getSetting(GROQ_AI_MODEL)
-
-                withContext(Dispatchers.Main) {
-                    currentViewState = CurrentView.LoadingCircle
-                    statusText = context.getString(org.futo.voiceinput.shared.R.string.decoding)
-                }
-
-                val transcriptionResult = GroqRecognizer.transcribe(
-                    apiKey = apiKey,
-                    audioData = audioBuffer,
-                    sampleRate = 16000,
-                    model = whisperModel,
-                    language = if (whisperLanguage == "auto") null else whisperLanguage
-                )
-
-                if (transcriptionResult.isFailure) {
-                    withContext(Dispatchers.Main) {
-                        currentViewState = CurrentView.Error
-                        errorText = "Transcription failed: ${transcriptionResult.exceptionOrNull()?.message}"
-                    }
-                    return@launch
-                }
-
-                val transcribedText = transcriptionResult.getOrThrow()
-
-                if (transcribedText.isBlank()) {
-                    withContext(Dispatchers.Main) {
-                        currentViewState = CurrentView.Error
-                        errorText = "No speech detected. Please try again."
-                    }
-                    return@launch
-                }
-
-                val finalText = if (aiModel.isBlank() || aiModel == "none") {
-                    transcribedText
-                } else {
-                    withContext(Dispatchers.Main) {
-                        currentViewState = CurrentView.LoadingCircle
-                        statusText = "Enhancing..."
-                    }
-
-                    val enhancedResult = GroqRecognizer.enhanceText(
-                        apiKey = apiKey,
-                        text = transcribedText,
-                        model = aiModel
-                    )
-
-                    enhancedResult.getOrNull() ?: transcribedText
-                }
-
-                withContext(Dispatchers.Main) {
-                    if (shouldPlaySounds) {
-                        soundPlayer.playStartSound()
-                    }
-
-                    if (resultHandler != null) {
-                        resultHandler.invoke(finalText)
-                    } else {
-                        val transaction = inputTransaction ?: return@withContext
-                        val sanitized = ModelOutputSanitizer.sanitize(finalText, transaction.textContext)
-                        transaction.commit(sanitized)
-                        manager.announce(finalText)
-                        manager.closeActionWindow()
-                    }
-                }
-
-                // Resume media after successful transcription
-                resumeMediaIfWePaused()
-            } catch (e: Exception) {
+    private suspend fun transcribeGroq() {
+        try {
+            val apiKey = context.getSetting(GROQ_API_KEY)
+            if (apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
                     currentViewState = CurrentView.Error
-                    errorText = "Error: ${e.message}"
+                    errorText = "Groq API key not set. Please configure it in Settings."
                 }
-                resumeMediaIfWePaused()
+                return
             }
+
+            val whisperModel = context.getSetting(GROQ_WHISPER_MODEL)
+            val whisperLanguage = context.getSetting(GROQ_WHISPER_LANGUAGE)
+            val aiModel = context.getSetting(GROQ_AI_MODEL)
+
+            withContext(Dispatchers.Main) {
+                currentViewState = CurrentView.LoadingCircle
+                statusText = context.getString(org.futo.voiceinput.shared.R.string.decoding)
+            }
+
+            val transcriptionResult = GroqRecognizer.transcribe(
+                apiKey = apiKey,
+                audioData = audioBuffer,
+                sampleRate = 16000,
+                model = whisperModel,
+                language = if (whisperLanguage == "auto") null else whisperLanguage
+            )
+
+            if (transcriptionResult.isFailure) {
+                withContext(Dispatchers.Main) {
+                    currentViewState = CurrentView.Error
+                    errorText = "Transcription failed: ${transcriptionResult.exceptionOrNull()?.message}"
+                }
+                return
+            }
+
+            val transcribedText = transcriptionResult.getOrThrow()
+
+            if (transcribedText.isBlank()) {
+                withContext(Dispatchers.Main) {
+                    currentViewState = CurrentView.Error
+                    errorText = "No speech detected. Please try again."
+                }
+                return
+            }
+
+            val finalText = if (aiModel.isBlank() || aiModel == "none") {
+                transcribedText
+            } else {
+                withContext(Dispatchers.Main) {
+                    currentViewState = CurrentView.LoadingCircle
+                    statusText = "Enhancing..."
+                }
+
+                val enhancedResult = GroqRecognizer.enhanceText(
+                    apiKey = apiKey,
+                    text = transcribedText,
+                    model = aiModel
+                )
+
+                enhancedResult.getOrNull() ?: transcribedText
+            }
+
+            withContext(Dispatchers.Main) {
+                if (shouldPlaySounds) {
+                    soundPlayer.playStartSound()
+                }
+
+                if (resultHandler != null) {
+                    resultHandler.invoke(finalText)
+                } else {
+                    val transaction = inputTransaction ?: return@withContext
+                    val sanitized = ModelOutputSanitizer.sanitize(finalText, transaction.textContext)
+                    transaction.commit(sanitized)
+                    manager.announce(finalText)
+                    manager.closeActionWindow()
+                }
+            }
+
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                currentViewState = CurrentView.Error
+                errorText = "Error: ${e.message}"
+            }
+        } finally {
+            resumeMediaIfWePaused()
         }
     }
 

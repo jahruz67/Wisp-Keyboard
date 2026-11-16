@@ -155,7 +155,7 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
 
     public static final String PREF_USE_WESTERN_NUMERALS = "pref_use_western_numerals";
 
-    public static final int DEFAULT_ALT_SPACES_MODE = SPACES_MODE_ALL;
+    public static final int DEFAULT_ALT_SPACES_MODE = SPACES_MODE_NONE;
 
     // Emoji
     public static final String PREF_EMOJI_RECENT_KEYS = "emoji_recent_keys";
@@ -281,7 +281,7 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
 
     public static boolean readAutoCorrectEnabled(final SharedPreferences prefs,
             final Resources res) {
-        return prefs.getBoolean(PREF_AUTO_CORRECTION, true);
+        return prefs.getBoolean(PREF_AUTO_CORRECTION, false);
     }
 
     public static float readPlausibilityThreshold(final Resources res) {
